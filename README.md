@@ -1,8 +1,14 @@
-# Hex Wargame Engine — *Ridge Assault*
+# Hex Wargame Engine
 
 A tiny, **reusable hex-and-counter wargame engine** in the tradition of old SPI
-games like *Napoleon at Waterloo*, plus a first playable scenario built on it:
-**Ridge Assault** (hot-seat, two players, mobile browser).
+games like *Napoleon at Waterloo*, plus two playable scenarios built on it
+(hot-seat, two players, mobile browser):
+
+- **Ridge Assault** — 9×11, a short fight for one town; fits on a phone screen.
+- **Sambre Crossing** — 24×18, an army-sized battle across a river. The map is
+  far bigger than any phone, so you **drag to scroll and pinch to zoom**.
+
+You pick one on the start screen.
 
 No build step, no dependencies, no server required. It's plain HTML + Canvas +
 vanilla JavaScript, so it runs by just opening a file.
@@ -44,10 +50,10 @@ You'll get a URL you can open anywhere. (Technically a deploy, but zero infra.)
 
 ---
 
-## How to play *Ridge Assault*
+## How to play
 
-- **You are the French (blue)** and move first. Capture the **Town** (gold ★) by
-  the end of **Turn 6**. The **Allies (red)** win by holding it.
+Both scenarios share the same rules; only the map, the armies and the goal differ.
+
 - Each turn a side plays **Movement**, then **Combat**, then passes the device.
 - **Move:** tap your unit → tap a highlighted (green) hex. Entering the six hexes
   around an enemy unit (its *Zone of Control*) stops your unit.
@@ -55,6 +61,35 @@ You'll get a URL you can open anywhere. (Technically a deploy, but zero infra.)
   of your adjacent, unused units joins the attack. Odds + a die roll on the
   Combat Results Table decide the outcome.
 - Counters read **letter + `CS·MA`** — combat strength and movement allowance.
+- **Tap a hex** to inspect its terrain, and **Undo** takes back your last move.
+
+### Getting around a big map
+
+The board can be larger than the screen. A camera handles that:
+
+| Gesture | Does |
+|---------|------|
+| **Drag** (or mouse-drag) | scroll the map |
+| **Pinch** (or scroll wheel) | zoom, around your fingers / the cursor |
+| **Fit** button, top right | frame the whole battlefield; tap again to go back |
+
+Tapping still selects and moves — a tap only counts if you barely moved, so you
+can never nudge a unit while scrolling. The map can't be dragged off into
+nothing, and the camera follows the action: selecting a unit, attacking, undoing
+or being handed the device brings the relevant hexes on screen. On a map that
+already fits (Ridge Assault on a phone) nothing changes — you see the whole
+board, and the **Fit** button stays out of the way.
+
+### The scenarios
+
+**Ridge Assault** — you are the **French (blue)** and move first. Capture the
+**Town** (gold ★) by the end of **Turn 6**. The **Allies (red)** win by holding it.
+
+**Sambre Crossing** — the French must take **three towns** beyond the river by
+the end of **Turn 10**; taking all three ends it at once, and at nightfall the
+side holding more towns wins (a tie favours the Allies). The **river is
+impassable** and has only **three fords**, so the game is about which crossing
+you commit to — and 11 units a side means the flanks are a long march away.
 
 | Unit | CS | MA |
 |------|----|----|
@@ -63,12 +98,15 @@ You'll get a URL you can open anywhere. (Technically a deploy, but zero infra.)
 | **A**rtillery | 5 | 3 |
 | **G**uard | 6 | 4 |
 
-| Terrain | Move cost | Defender ×  |
-|---------|-----------|-------------|
-| Clear | 1 | ×1 |
-| Woods | 2 | ×2 |
-| Hill  | 2 | ×3 |
-| Town  | 1 | ×3 |
+| Terrain | Move cost | Defender ×  | Where |
+|---------|-----------|-------------|-------|
+| Clear | 1 | ×1 | both |
+| Woods | 2 | ×2 | both |
+| Hill  | 2 | ×3 | both |
+| Town  | 1 | ×3 | both |
+| Marsh | 3 | ×1 | Sambre Crossing |
+| Ford  | 2 | ×1 | Sambre Crossing — the only way over the river |
+| River | — | — | Sambre Crossing — impassable |
 
 ---
 
@@ -85,22 +123,44 @@ src/
   engine.js                the wargame engine: board, units, turns/phases,
                            Zones of Control, movement, odds-based combat + CRT,
                            victory checks. DOM-free, headless-testable.
-  renderer.js              Canvas renderer: draws the board, auto-fits the
-                           viewport (crisp on retina), and picks hexes from taps
+  renderer.js              Canvas renderer + CAMERA: draws the board (crisp on
+                           retina, culled to the viewport), owns pan/zoom, and
+                           picks hexes from taps
 games/
-  ridge-assault.js         THE GAME as data: unit types, terrain, map, setup,
-                           CRT (uses engine default), and the victory goal
-app.js                     glue for this app: input, HUD, overlays, combat dialog
+  ridge-assault.js         A GAME as data: unit types, terrain, map, setup,
+  sambre-crossing.js       CRT (uses engine default), and the victory goal.
+                           Each file registers itself in `HEX_SCENARIOS`.
+app.js                     glue for this app: gestures, HUD, overlays, combat
+                           dialog, scenario picker
 test/
   engine.test.js           headless rules tests (pure Node, no dependencies)
+  camera.test.js           headless camera + scenario-integrity tests
 ```
+
+### The camera
+
+Because `Layout.center()` is affine in `size` and `origin`, the camera needs no
+canvas transform: **zoom scales `size`, pan translates `origin`**, so drawing
+and hit-testing stay in one coordinate system. The renderer keeps `zoom` (1 =
+the whole board fits, the old auto-fit) and `cam`, the *world* point at the
+centre of the viewport — world coordinates being hex positions at `size = 1`,
+independent of both zoom and pan. Panning is clamped per axis, so an axis the
+board doesn't fill stays centred and one it overflows can't be dragged past its
+edge. A resize holds the on-screen hex size rather than the zoom ratio, so
+rotating the device doesn't resize your counters.
 
 ### Make your own scenario
 Copy `games/ridge-assault.js`, edit the data — `unitTypes`, `terrain`, the ASCII
-`map`, `setup`, `maxTurns`, and the `victory()` goal — and point `index.html` at
-your file. You can override any rule (movement cost, ZOC, the whole CRT, odds
-mapping, die roll) by supplying a `rules: { ... }` block in the game definition;
-otherwise the engine's sensible defaults apply.
+`map`, `setup`, `maxTurns`, and the `victory()` goal — add a `<script>` tag for
+it in `index.html`, and keep the last line that pushes it onto
+`global.HEX_SCENARIOS`: that's what puts it on the start screen. `title`,
+`blurb` and `brief` are what the picker and the help overlay display. You can
+override any rule (movement cost, ZOC, the whole CRT, odds mapping, die roll) by
+supplying a `rules: { ... }` block; otherwise the engine's defaults apply.
+
+Maps may be any size — the camera handles the rest — and may be ragged (a space
+character means "no hex here"). Terrain with `passable: false` is a wall, which
+is how Sambre Crossing's river works.
 
 The engine is the reusable core; scenarios are thin data + a few callbacks.
 
@@ -109,17 +169,24 @@ The engine is the reusable core; scenarios are thin data + a few callbacks.
 ## Tests
 
 ```bash
-npm test          # runs test/engine.test.js — pure Node, no install needed
+npm test          # pure Node, no install needed
 ```
 
-These drive the engine headlessly (movement, ZOC, combat/CRT, both victory
-conditions). The UI is verified separately by loading `index.html` in a headless
-browser; that check is optional and not required to run or hack on the game.
+`engine.test.js` drives the rules headlessly (movement, ZOC, combat/CRT, both
+victory conditions). `camera.test.js` drives the renderer's camera against stub
+canvas/container objects — pan clamping, zoom about a focal point, `pixelToHex`
+round-trips, and that `fit()` still frames a board exactly as it always did —
+and checks the scenarios themselves: map dimensions, that every unit and
+objective sits on a real passable hex, and that both armies can actually walk to
+every objective (which is what catches a typo in the river).
+
+The UI is verified separately by loading `index.html` in a headless browser;
+that check is optional and not required to run or hack on the game.
 
 ---
 
 ## Roadmap (kept out of v1 on purpose)
 
-AI opponent, unit stacking, player-chosen retreats, fog of war, more scenarios /
-a scenario picker, save & resume, sound. Each is an additive change because the
-rules live in one place and scenarios are just data.
+AI opponent, unit stacking, player-chosen retreats, fog of war, a mini-map,
+smooth (animated) camera moves, save & resume, sound. Each is an additive change
+because the rules live in one place and scenarios are just data.

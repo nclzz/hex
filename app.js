@@ -1,60 +1,74 @@
 /* =========================================================================
    app.js — Application layer: wires the engine + renderer to the DOM UI for
-   the Ridge Assault scenario (hot-seat, two players). Handles input, HUD,
-   overlays and the combat dialog. Depends on Hex, HexWar, HexRenderer + a game.
+   whichever scenario the player picks (hot-seat, two players). Handles input
+   (tap, drag-to-pan, pinch/wheel-to-zoom), HUD, overlays and the combat
+   dialog. Depends on Hex, HexWar, HexRenderer + the registered games.
    ========================================================================= */
 (function (global) {
   "use strict";
   const { Game } = global.HexWar;
-  const DEF = global.RIDGE_ASSAULT;
 
   // ------------------------------- DOM refs --------------------------------
   const $ = (id) => document.getElementById(id);
   const boardWrap = $("boardWrap"), canvas = $("cv");
 
   // ------------------------------- game/renderer ---------------------------
-  let game, renderer;
+  let DEF = null;               // the scenario currently being played
+  let game = null, renderer = null;
   let selected = null, reachable = new Map();
   let inspected = null; // hex {q,r} shown in the terrain inspector
   const factionById = (id) => DEF.factions.find((f) => f.id === id);
 
-  renderer = new global.HexRenderer(canvas, {
-    orientation: DEF.orientation,
-    terrainColor: (g, hex) => DEF.terrain[hex.terrain].color,
-    decorateHex: (ctx, g, hex, c, size) => {
-      if (g.isObjective(hex.q, hex.r)) {
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = (Math.PI / 180) * (60 * i - 30);
-          const x = c.x + size * 0.72 * Math.cos(a), y = c.y + size * 0.72 * Math.sin(a);
-          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  // Below these hex sizes the counter glyphs would be smaller than they are
+  // legible, so we drop detail instead of drawing unreadable text.
+  const LOD_STATS = 14, LOD_GLYPH = 9, LOD_STAR = 12;
+
+  function makeRenderer() {
+    return new global.HexRenderer(canvas, {
+      orientation: DEF.orientation,
+      terrainColor: (g, hex) => DEF.terrain[hex.terrain].color,
+      decorateHex: (ctx, g, hex, c, size) => {
+        if (g.isObjective(hex.q, hex.r)) {
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (Math.PI / 180) * (60 * i - 30);
+            const x = c.x + size * 0.72 * Math.cos(a), y = c.y + size * 0.72 * Math.sin(a);
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          }
+          ctx.closePath();
+          ctx.lineWidth = 2; ctx.strokeStyle = "#c9a227"; ctx.stroke();
+          if (size < LOD_STAR) return;
+          ctx.fillStyle = "#7a5c00"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.font = `bold ${size * 0.5}px sans-serif`;
+          ctx.fillText("★", c.x, c.y);
         }
-        ctx.closePath();
-        ctx.lineWidth = 2; ctx.strokeStyle = "#c9a227"; ctx.stroke();
-        ctx.fillStyle = "#7a5c00"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.font = `bold ${Math.max(9, size * 0.5)}px sans-serif`;
-        ctx.fillText("★", c.x, c.y);
-      }
-    },
-    drawUnit: (ctx, g, u, c, size) => {
-      const s = size * 0.66, t = g.typeOf(u), fac = factionById(u.faction);
-      const rad = s * 0.9, x = c.x - rad, y = c.y - rad * 0.86, w = rad * 2, hh = rad * 1.72, br = Math.max(3, s * 0.18);
-      roundRect(ctx, x, y, w, hh, br);
-      const dimmed = g.phase === "move" && u.faction === g.activeFaction && u.moved;
-      ctx.fillStyle = dimmed ? fac.dark : fac.color;
-      ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = `bold ${Math.max(10, s * 0.95)}px Georgia, serif`;
-      ctx.fillText(t.glyph, c.x, c.y - s * 0.16);
-      ctx.font = `${Math.max(7, s * 0.5)}px sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,.92)";
-      ctx.fillText(`${t.combat}·${t.move}`, c.x, c.y + s * 0.62);
-      if (g.phase === "combat" && u.faction === g.activeFaction && u.acted) {
-        ctx.fillStyle = "rgba(0,0,0,.28)"; roundRect(ctx, x, y, w, hh, br); ctx.fill();
-      }
-    },
-  });
+      },
+      drawUnit: (ctx, g, u, c, size) => {
+        const s = size * 0.66, t = g.typeOf(u), fac = factionById(u.faction);
+        const rad = s * 0.9, x = c.x - rad, y = c.y - rad * 0.86, w = rad * 2, hh = rad * 1.72, br = Math.max(2, s * 0.18);
+        roundRect(ctx, x, y, w, hh, br);
+        const dimmed = g.phase === "move" && u.faction === g.activeFaction && u.moved;
+        ctx.fillStyle = dimmed ? fac.dark : fac.color;
+        ctx.fill();
+        ctx.lineWidth = size < LOD_GLYPH ? 1 : 1.5;
+        ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.stroke();
+        if (size >= LOD_GLYPH) {
+          const stats = size >= LOD_STATS;
+          ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.font = `bold ${s * 0.95}px Georgia, serif`;
+          ctx.fillText(t.glyph, c.x, c.y - (stats ? s * 0.16 : 0));
+          if (stats) {
+            ctx.font = `${s * 0.5}px sans-serif`;
+            ctx.fillStyle = "rgba(255,255,255,.92)";
+            ctx.fillText(`${t.combat}·${t.move}`, c.x, c.y + s * 0.62);
+          }
+        }
+        if (g.phase === "combat" && u.faction === g.activeFaction && u.acted) {
+          ctx.fillStyle = "rgba(0,0,0,.28)"; roundRect(ctx, x, y, w, hh, br); ctx.fill();
+        }
+      },
+    });
+  }
 
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y);
@@ -78,21 +92,165 @@
     return hs;
   }
   function draw() {
+    if (!game || !renderer) return;
     renderer.render(game, { highlights: highlights(), selected });
   }
-  function fitAndDraw() {
-    renderer.fit([...game.board.values()], boardWrap);
-    draw();
+  // Coalesce the redraws a 60 fps pan/pinch would otherwise trigger.
+  let rafPending = false;
+  function requestDraw() {
+    if (rafPending) return;
+    rafPending = true;
+    global.requestAnimationFrame(() => { rafPending = false; draw(); });
   }
 
+  // Re-measure after a resize / rotation; the renderer keeps the camera's
+  // world focus and the on-screen hex size across the change.
+  function relayout() {
+    if (!game || !renderer) return;
+    renderer.resize(boardWrap);
+    draw(); syncFit();
+  }
+
+  // Bring a hex on screen if it isn't; used so the action is never off-camera.
+  function focus(hex) { if (hex && renderer) renderer.ensureVisible(hex); }
+  // Open on the active side's centre of mass, so a player handed the device
+  // is looking at their own army rather than at empty terrain.
+  function focusActive() {
+    if (!game || !renderer) return;
+    const list = game.living(game.activeFaction);
+    if (!list.length) return;
+    const q = list.reduce((s, u) => s + u.q, 0) / list.length;
+    const r = list.reduce((s, u) => s + u.r, 0) / list.length;
+    renderer.centerOn({ q, r });
+  }
+
+  // ------------------------------- camera UI -------------------------------
+  const fitBtn = $("fitBtn");
+  let zoomBeforeFit = null; // set while the player is looking at the whole map
+
+  function syncFit() {
+    if (!renderer) return;
+    const over = renderer.contentOverflows();
+    boardWrap.classList.toggle("overflowing", over);
+    const zoomedOut = renderer.isAtMinZoom() && zoomBeforeFit != null;
+    fitBtn.classList.toggle("hidden", !over && !zoomedOut);
+    fitBtn.textContent = zoomedOut ? "Zoom in" : "Fit";
+  }
+  fitBtn.onclick = () => {
+    if (!game || !renderer) return;
+    if (renderer.isAtMinZoom() && zoomBeforeFit != null) {
+      renderer.setZoom(zoomBeforeFit); zoomBeforeFit = null;
+    } else {
+      zoomBeforeFit = renderer.zoom; renderer.frameAll();
+    }
+    draw(); syncFit();
+  };
+
   // ------------------------------- input -----------------------------------
+  // A tap selects/moves; a drag pans; two fingers (or the wheel) zoom. The tap
+  // only commits on pointerup, once we know the pointer never became a drag.
+  const TAP_SLOP = 10; // CSS px of travel still counted as a tap
+  const pointers = new Map(); // pointerId -> {x,y}
+  let drag = null;   // {id, downX, downY, lastX, lastY, moved}
+  let pinch = null;  // {ids, dist, midX, midY}
+
+  function localPt(ev) {
+    const r = canvas.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+  function boardBusy() { return !game || game.over || anyOverlay(); }
+
+  function startPinch() {
+    const ids = [...pointers.keys()].slice(0, 2);
+    const a = pointers.get(ids[0]), b = pointers.get(ids[1]);
+    pinch = {
+      ids, dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2,
+    };
+    drag = null;
+  }
+
   canvas.addEventListener("pointerdown", (ev) => {
-    if (game.over || anyOverlay()) return;
-    const rect = canvas.getBoundingClientRect();
-    const hex = renderer.pick(game, ev.clientX - rect.left, ev.clientY - rect.top);
-    if (!hex) { selected = null; reachable = new Map(); inspected = null; renderInspector(); draw(); syncSel(); return; }
-    onHex(hex.q, hex.r);
+    if (boardBusy()) return;
+    const p = localPt(ev);
+    pointers.set(ev.pointerId, p);
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* not captureable */ }
+    if (pointers.size === 1) {
+      drag = { id: ev.pointerId, downX: p.x, downY: p.y, lastX: p.x, lastY: p.y, moved: false };
+    } else if (pointers.size === 2) {
+      startPinch();
+    }
   });
+
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!pointers.has(ev.pointerId) || !renderer) return;
+    const p = localPt(ev);
+    pointers.set(ev.pointerId, p);
+
+    if (pinch) {
+      const a = pointers.get(pinch.ids[0]), b = pointers.get(pinch.ids[1]);
+      if (!a || !b) return;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+      renderer.zoomAt(dist / pinch.dist, midX, midY);
+      renderer.panByPixels(midX - pinch.midX, midY - pinch.midY);
+      pinch.dist = dist; pinch.midX = midX; pinch.midY = midY;
+      requestDraw(); syncFit();
+      return;
+    }
+    if (drag && drag.id === ev.pointerId) {
+      if (!drag.moved && Math.hypot(p.x - drag.downX, p.y - drag.downY) > TAP_SLOP) drag.moved = true;
+      if (drag.moved) { renderer.panByPixels(p.x - drag.lastX, p.y - drag.lastY); requestDraw(); }
+      drag.lastX = p.x; drag.lastY = p.y;
+    }
+  });
+
+  function endPointer(ev) {
+    if (!pointers.has(ev.pointerId)) return;
+    pointers.delete(ev.pointerId);
+    try { canvas.releasePointerCapture(ev.pointerId); } catch (e) { /* already gone */ }
+
+    if (pinch) {
+      if (pointers.size >= 2) { startPinch(); return; }
+      pinch = null;
+      // Lifting one finger hands the gesture back to the other one as a pan —
+      // never as a tap, which would fire a stray move at the end of a pinch.
+      const id = [...pointers.keys()][0];
+      if (id != null) {
+        const q = pointers.get(id);
+        drag = { id, downX: q.x, downY: q.y, lastX: q.x, lastY: q.y, moved: true };
+      }
+      syncFit();
+      return;
+    }
+    const d = drag;
+    if (d && d.id === ev.pointerId) {
+      drag = null;
+      if (!d.moved && ev.type === "pointerup") commitTap(d.downX, d.downY);
+      else syncFit();
+    }
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+
+  canvas.addEventListener("wheel", (ev) => {
+    if (boardBusy() || !renderer) return;
+    ev.preventDefault();
+    const p = localPt(ev);
+    const dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY; // lines -> px
+    renderer.zoomAt(Math.exp(-dy * 0.0015), p.x, p.y);
+    requestDraw(); syncFit();
+  }, { passive: false });
+
+  function commitTap(x, y) {
+    if (boardBusy()) return;
+    const hex = renderer.pick(game, x, y);
+    if (!hex) {
+      selected = null; reachable = new Map(); inspected = null;
+      renderInspector(); draw(); syncSel(); return;
+    }
+    onHex(hex.q, hex.r);
+  }
 
   function onHex(q, r) {
     inspected = { q, r }; // every board tap inspects the hex
@@ -100,16 +258,18 @@
     if (game.phase === "move") {
       if (selected && reachable.has(global.Hex.key(q, r))) {
         game.moveUnit(selected, q, r);
-        selected = null; reachable = new Map(); renderInspector(); draw(); syncSel(); syncUndo(); return;
+        selected = null; reachable = new Map();
+        focus({ q, r });
+        renderInspector(); draw(); syncSel(); syncUndo(); return;
       }
       if (u && u.faction === game.activeFaction && !u.moved) {
-        selected = u; reachable = game.reachable(u);
+        selected = u; reachable = game.reachable(u); focus(u);
       } else { selected = null; reachable = new Map(); }
       renderInspector(); draw(); syncSel();
     } else { // combat
       if (u && u.faction !== game.activeFaction) {
         const atk = game.attackersFor(u);
-        if (atk.length) openCombat(u, atk);
+        if (atk.length) { focus(u); openCombat(u, atk); }
       } else { selected = null; }
       renderInspector(); draw(); syncSel();
     }
@@ -118,7 +278,7 @@
   // --------------------------- hex inspector -------------------------------
   function renderInspector() {
     const el = $("hexInfo");
-    if (!inspected) { el.classList.add("hidden"); return; }
+    if (!inspected || !game) { el.classList.add("hidden"); return; }
     const { q, r } = inspected;
     const hx = game.hex(q, r);
     if (!hx) { el.classList.add("hidden"); return; }
@@ -126,8 +286,9 @@
     el.querySelector(".hiSwatch").style.background = t.color;
     el.querySelector(".hiName").textContent = t.name;
     const plural = t.moveCost === 1 ? "" : "s";
-    el.querySelector(".hiStats").textContent =
-      `Enter: ${t.moveCost} MP · Defense ×${t.defMult}`;
+    el.querySelector(".hiStats").textContent = t.passable === false
+      ? "Impassable"
+      : `Enter: ${t.moveCost} MP · Defense ×${t.defMult}`;
     const effect = t.passable === false
       ? "Impassable — units cannot enter."
       : `Costs ${t.moveCost} movement point${plural} to enter. ` +
@@ -198,7 +359,7 @@
   }
 
   // ------------------------------ overlays ---------------------------------
-  const OVERLAYS = ["passOv", "cbOv", "winOv", "helpOv"];
+  const OVERLAYS = ["startOv", "passOv", "cbOv", "winOv", "helpOv"];
   const show = (id) => $(id).classList.add("show");
   const hide = (id) => $(id).classList.remove("show");
   const anyOverlay = () => OVERLAYS.some((id) => $(id).classList.contains("show"));
@@ -209,29 +370,77 @@
     $("passTurn").textContent = `Turn ${game.turn} of ${DEF.maxTurns}`;
     show("passOv");
   }
-  $("passOv").addEventListener("pointerdown", () => { hide("passOv"); syncHud(); draw(); syncSel(); });
+  $("passOv").addEventListener("pointerdown", () => {
+    hide("passOv"); focusActive(); syncHud(); draw(); syncSel(); syncFit();
+  });
   $("help").onclick = () => show("helpOv");
   $("helpClose").onclick = () => hide("helpOv");
-  $("newBtn").onclick = () => startGame();
-  $("winBtn").onclick = () => startGame();
+  $("newBtn").onclick = () => showStart();
+  $("winBtn").onclick = () => { hide("winOv"); startGame(DEF); };
+  $("winPickBtn").onclick = () => { hide("winOv"); showStart(); };
+
+  // --------------------------- scenario picker -----------------------------
+  function showStart() {
+    const list = $("scenList");
+    list.innerHTML = "";
+    for (const def of (global.HEX_SCENARIOS || [])) {
+      const b = document.createElement("button");
+      b.className = "scenBtn";
+      const t = document.createElement("div"); t.className = "t"; t.textContent = def.title;
+      const d = document.createElement("div"); d.className = "b"; d.textContent = def.blurb || "";
+      b.appendChild(t); b.appendChild(d);
+      b.onclick = () => { hide("startOv"); startGame(def); };
+      list.appendChild(b);
+    }
+    hide("cbOv"); hide("winOv");
+    document.body.classList.add("nogame");
+    show("startOv");
+  }
+
+  // Help text is per-scenario: goal from the game def, legend from its terrain.
+  function populateHelp() {
+    $("helpTitle").textContent = `${DEF.title} — How to play`;
+    $("helpBrief").textContent = DEF.brief || "";
+    const p = $("helpTerrain");
+    p.innerHTML = "";
+    for (const code of Object.keys(DEF.terrain)) {
+      const t = DEF.terrain[code];
+      const sw = document.createElement("span");
+      sw.className = "k"; sw.style.background = t.color;
+      const label = document.createElement("span");
+      const note = t.passable === false ? " (impassable)"
+        : t.defMult > 1 ? ` (×${t.defMult} def)` : "";
+      label.textContent = `${t.name}${note} `;
+      p.appendChild(sw); p.appendChild(label);
+    }
+  }
 
   // ------------------------------- HUD -------------------------------------
   const actBtn = $("actBtn"), undoBtn = $("undoBtn");
-  actBtn.onclick = () => { if (!game.over && !anyOverlay()) game.endPhase(); };
+  actBtn.onclick = () => { if (game && !game.over && !anyOverlay()) game.endPhase(); };
   undoBtn.onclick = () => {
-    if (game.over || anyOverlay()) return;
+    if (!game || game.over || anyOverlay()) return;
     const u = game.undoMove();
-    if (u) { selected = u; reachable = game.reachable(u); inspected = { q: u.q, r: u.r }; renderInspector(); }
+    if (u) { selected = u; reachable = game.reachable(u); inspected = { q: u.q, r: u.r }; focus(u); renderInspector(); }
     else { selected = null; }
     draw(); syncSel(); syncUndo();
   };
 
   function syncUndo() {
-    const inMove = game.phase === "move";
+    const inMove = game && game.phase === "move";
     undoBtn.classList.toggle("hidden", !inMove);
-    undoBtn.disabled = !game.canUndo();
+    undoBtn.disabled = !game || !game.canUndo();
   }
   function syncHud() {
+    if (!game) {
+      $("turnPill").textContent = "—";
+      $("sidePill").textContent = ""; $("sidePill").style.background = "transparent";
+      $("phaseTxt").textContent = "Choose a scenario";
+      actBtn.textContent = "End Movement";
+      undoBtn.classList.add("hidden");
+      $("sel").innerHTML = `<span class="muted">Pick a battle to begin.</span>`;
+      return;
+    }
     const fac = factionById(game.activeFaction);
     $("turnPill").textContent = `Turn ${game.turn}/${DEF.maxTurns}`;
     const sp = $("sidePill"); sp.textContent = fac.short; sp.style.background = fac.color;
@@ -243,6 +452,7 @@
   }
   function syncSel() {
     const el = $("sel");
+    if (!game) return;
     if (game.phase === "combat") {
       const n = game.enemiesOf(game.activeFaction).filter((u) => game.attackersFor(u).length > 0).length;
       el.innerHTML = n > 0
@@ -265,11 +475,25 @@
   }
 
   // ------------------------------- lifecycle -------------------------------
-  function startGame() {
+  function startGame(def) {
+    DEF = def;
+    document.body.classList.remove("nogame"); // the board needs its real size
     game = new Game(DEF);
-    selected = null; reachable = new Map(); inspected = null; renderInspector();
+    selected = null; reachable = new Map(); inspected = null; pending = null;
+    pointers.clear(); drag = null; pinch = null; zoomBeforeFit = null;
+    renderInspector();
+    populateHelp();
+
+    renderer = makeRenderer();
+    renderer.setBoard([...game.board.values()]);
+    renderer.resize(boardWrap);
+    renderer.frameDefault();
+
     game.events.on("sideChange", () => { selected = null; showPass(); });
-    game.events.on("phase", () => { selected = null; reachable = new Map(); inspected = null; renderInspector(); syncHud(); draw(); });
+    game.events.on("phase", () => {
+      selected = null; reachable = new Map(); inspected = null;
+      focusActive(); renderInspector(); syncHud(); draw(); syncFit();
+    });
     game.events.on("gameover", ({ winner, reason }) => {
       const fac = winner ? factionById(winner) : null;
       $("winTitle").textContent = fac ? fac.name + " Victory" : "Draw";
@@ -278,10 +502,15 @@
       show("winOv");
     });
     hide("cbOv"); hide("winOv");
-    fitAndDraw(); syncHud(); showPass();
+    focusActive();
+    draw(); syncHud(); syncFit(); showPass();
     global.__game = game; global.__renderer = renderer; // for smoke-testing
   }
 
-  global.addEventListener("resize", () => { if (game) fitAndDraw(); });
-  startGame();
+  if (global.ResizeObserver) new global.ResizeObserver(relayout).observe(boardWrap);
+  global.addEventListener("resize", relayout);
+  global.addEventListener("orientationchange", relayout);
+
+  syncHud();
+  showStart();
 })(typeof window !== "undefined" ? window : globalThis);
