@@ -1,0 +1,9 @@
+{
+  "name": "hex-wargame-engine",
+  "version": "0.1.0",
+  "description": "A small, reusable hex wargame engine (SPI 'Napoleon at Waterloo' lineage) with a first scenario, Ridge Assault.",
+  "private": true,
+  "scripts": {
+    "test": "node test/engine.test.js"
+  }
+}

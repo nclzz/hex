@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Ridge Assault — Hex Wargame</title>
+<style>
+  :root{
+    --blue:#2b5fa8; --blue-d:#1c3f70;
+    --red:#b23a3a;  --red-d:#7d2626;
+    --ink:#22201c; --panel:#efe9dc; --panel-d:#ded4bf;
+    --line:#8a7f68;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:#2a271f; color:var(--ink); user-select:none; -webkit-user-select:none;
+    touch-action:manipulation;}
+  #app{display:flex; flex-direction:column; height:100%; width:100%;}
+
+  /* Top HUD */
+  #hud{flex:0 0 auto; background:var(--panel); border-bottom:2px solid var(--line);
+    padding:6px 8px; display:flex; align-items:center; gap:8px; font-size:13px;}
+  #turnPill{font-weight:700; padding:3px 8px; border-radius:10px; background:var(--panel-d);
+    border:1px solid var(--line); white-space:nowrap;}
+  #sidePill{font-weight:800; padding:3px 10px; border-radius:10px; color:#fff; white-space:nowrap;}
+  #phaseTxt{font-weight:600; opacity:.85;}
+  #hud .spacer{flex:1;}
+  #newBtn{font-size:12px; padding:5px 9px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-d); color:var(--ink); font-weight:600;}
+
+  /* Board */
+  #boardWrap{flex:1 1 auto; position:relative; min-height:0; background:#3a3527;
+    display:flex; align-items:center; justify-content:center;}
+  canvas{display:block; touch-action:none;}
+
+  /* Bottom bar */
+  #bottom{flex:0 0 auto; background:var(--panel); border-top:2px solid var(--line);
+    padding:7px 8px; display:flex; align-items:center; gap:8px; min-height:52px;}
+  #sel{font-size:12px; line-height:1.25; flex:1; min-width:0;}
+  #sel b{font-size:13px;}
+  #sel .muted{opacity:.7;}
+  #actBtn{font-size:15px; font-weight:800; padding:11px 16px; border-radius:10px; border:none;
+    color:#fff; background:var(--ink); white-space:nowrap;}
+  #actBtn:active{transform:translateY(1px);}
+  #log{position:absolute; left:8px; right:8px; bottom:60px; text-align:center; pointer-events:none;}
+  #log span{display:inline-block; background:rgba(20,18,14,.86); color:#fff; font-size:12.5px;
+    padding:6px 12px; border-radius:14px; max-width:92%;}
+
+  /* Overlays */
+  .overlay{position:absolute; inset:0; z-index:20; display:none; align-items:center;
+    justify-content:center; padding:22px; text-align:center;}
+  .overlay.show{display:flex;}
+  #passOv{background:rgba(18,16,12,.92);}
+  #passCard{color:#fff;}
+  #passCard .big{font-size:30px; font-weight:900; margin:6px 0;}
+  #passCard .sub{opacity:.8; font-size:14px; margin-top:10px;}
+  #passSide{display:inline-block; padding:6px 16px; border-radius:12px; color:#fff; font-weight:900; font-size:22px;}
+
+  #cbOv{background:rgba(18,16,12,.55);}
+  #cbCard{background:var(--panel); border:2px solid var(--line); border-radius:16px;
+    padding:16px; width:min(340px,90vw); box-shadow:0 12px 40px rgba(0,0,0,.5);}
+  #cbCard h3{margin:0 0 10px; font-size:17px; text-align:center;}
+  .cbRow{display:flex; justify-content:space-between; font-size:14px; padding:3px 2px;}
+  .cbRow .v{font-weight:700;}
+  #odds{text-align:center; font-size:26px; font-weight:900; margin:8px 0 4px;}
+  #dieBox{text-align:center; font-size:14px; min-height:20px; margin-bottom:6px; opacity:.9;}
+  #cbBtns{display:flex; gap:10px; margin-top:12px;}
+  #cbBtns button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; font-size:15px; color:#fff;}
+  #resolveBtn{background:var(--red-d);} #cancelBtn{background:#6b6355;}
+  #contBtn{background:var(--ink); width:100%; margin-top:12px; padding:12px; border-radius:10px; border:none; color:#fff; font-weight:800; font-size:15px; display:none;}
+
+  #winOv{background:rgba(18,16,12,.94);}
+  #winCard{color:#fff;} #winCard .big{font-size:26px; font-weight:900; margin:8px 0;}
+  #winCard .sub{opacity:.85; font-size:14px; max-width:280px; margin:6px auto 16px;}
+  #winCard button{background:#fff; color:var(--ink); font-weight:800; font-size:15px;
+    padding:11px 22px; border-radius:10px; border:none;}
+
+  #help{position:absolute; top:8px; right:8px; z-index:10; width:26px; height:26px; border-radius:50%;
+    background:rgba(20,18,14,.7); color:#fff; border:none; font-weight:800; font-size:15px;}
+  #helpOv{background:rgba(18,16,12,.92);}
+  #helpCard{color:#fff; text-align:left; max-width:340px; font-size:13px; line-height:1.5;}
+  #helpCard h3{margin:0 0 8px; text-align:center;}
+  #helpCard .k{display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:-2px; margin-right:4px;}
+  #helpCard button{display:block; margin:16px auto 0; background:#fff; color:var(--ink);
+    font-weight:800; padding:9px 20px; border-radius:9px; border:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span id="turnPill">Turn 1/6</span>
+    <span id="sidePill">FRENCH</span>
+    <span id="phaseTxt">Movement</span>
+    <span class="spacer"></span>
+    <button id="newBtn">New</button>
+  </div>
+
+  <div id="boardWrap">
+    <canvas id="cv"></canvas>
+    <button id="help">?</button>
+    <div id="log"></div>
+
+    <!-- Pass-the-phone overlay -->
+    <div id="passOv" class="overlay">
+      <div id="passCard">
+        <div class="sub">Pass the device to</div>
+        <div class="big"><span id="passSide">FRENCH</span></div>
+        <div id="passTurn" class="sub"></div>
+        <div class="sub">Tap anywhere to begin your turn</div>
+      </div>
+    </div>
+
+    <!-- Combat overlay -->
+    <div id="cbOv" class="overlay">
+      <div id="cbCard">
+        <h3>Resolve Combat</h3>
+        <div class="cbRow"><span>Attackers (total CS)</span><span class="v" id="cbAtk">–</span></div>
+        <div class="cbRow"><span>Defender</span><span class="v" id="cbDef">–</span></div>
+        <div class="cbRow"><span>Terrain</span><span class="v" id="cbTer">–</span></div>
+        <div id="odds">– : –</div>
+        <div id="dieBox"></div>
+        <div id="cbBtns">
+          <button id="cancelBtn">Cancel</button>
+          <button id="resolveBtn">Attack!</button>
+        </div>
+        <button id="contBtn">Continue</button>
+      </div>
+    </div>
+
+    <!-- Victory overlay -->
+    <div id="winOv" class="overlay">
+      <div id="winCard">
+        <div class="sub">Battle Over</div>
+        <div class="big" id="winTitle">Victory</div>
+        <div class="sub" id="winSub"></div>
+        <button id="winBtn">Play Again</button>
+      </div>
+    </div>
+
+    <!-- Help overlay -->
+    <div id="helpOv" class="overlay">
+      <div id="helpCard">
+        <h3>Ridge Assault — How to play</h3>
+        <p><b>Goal.</b> The <b style="color:#7fa8e6">French</b> (you go first) must capture the
+        <b>Town</b> objective by the end of Turn 6. The <b style="color:#e69090">Allies</b> win by holding it.</p>
+        <p><b>Each turn</b> a side does <b>Movement</b> then <b>Combat</b>, then passes the phone.</p>
+        <p><b>Move:</b> tap your unit, then tap a highlighted hex. Entering an enemy's
+        surrounding hexes (Zone of Control) stops the unit.</p>
+        <p><b>Fight:</b> in the Combat phase tap an enemy next to your units. All your adjacent
+        units join the attack; odds &amp; a die decide the result.</p>
+        <p><b>Counters</b> show a letter (I/C/A/G) and <b>CS·MA</b> — combat strength &amp; movement.</p>
+        <p><span class="k" style="background:#cfe3b8"></span>Clear
+           <span class="k" style="background:#5a8f4e"></span>Woods (×2 def)
+           <span class="k" style="background:#c9a36a"></span>Hill (×3 def)
+           <span class="k" style="background:#b9b2a6"></span>Town (×3 def)</p>
+        <button id="helpClose">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="sel"><span class="muted">Tap a unit to select it.</span></div>
+    <button id="actBtn">End Movement</button>
+  </div>
+</div>
+
+<!-- Engine (reusable, game-agnostic) -->
+<script src="src/hex.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/renderer.js"></script>
+<!-- Game definition (data on top of the engine) -->
+<script src="games/ridge-assault.js"></script>
+<!-- Application glue (input, HUD, overlays) -->
+<script src="app.js"></script>
+</body>
+</html>
