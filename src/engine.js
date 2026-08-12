@@ -169,9 +169,21 @@
       const reach = this.reachable(unit);
       const target = reach.get(Hex.key(q, r));
       if (!target) return { ok: false, reason: "unreachable" };
+      this.moveLog.push({ unit, fromQ: unit.q, fromR: unit.r }); // for undo
       unit.q = q; unit.r = r; unit.moved = true;
       this.events.emit("move", { unit });
       return { ok: true };
+    }
+
+    // Undo the most recent move of the current Movement phase. Returns the
+    // restored unit, or null if there is nothing to undo.
+    canUndo() { return this.phase === "move" && this.moveLog.length > 0; }
+    undoMove() {
+      if (!this.canUndo()) return null;
+      const last = this.moveLog.pop();
+      last.unit.q = last.fromQ; last.unit.r = last.fromR; last.unit.moved = false;
+      this.events.emit("undo", { unit: last.unit });
+      return last.unit;
     }
 
     /* ------------------------------ combat ------------------------------- */
@@ -287,6 +299,7 @@
     /* --------------------------- turn / phases --------------------------- */
     _enterPhase() {
       const faction = this.activeFaction;
+      this.moveLog = []; // undo history is per-phase
       if (this.phase === "move") this.living(faction).forEach((u) => (u.moved = false));
       if (this.phase === "combat") this.living(faction).forEach((u) => (u.acted = false));
       this.events.emit("phase", { turn: this.turn, faction, phase: this.phase });

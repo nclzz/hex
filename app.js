@@ -100,7 +100,7 @@
     if (game.phase === "move") {
       if (selected && reachable.has(global.Hex.key(q, r))) {
         game.moveUnit(selected, q, r);
-        selected = null; reachable = new Map(); renderInspector(); draw(); syncSel(); return;
+        selected = null; reachable = new Map(); renderInspector(); draw(); syncSel(); syncUndo(); return;
       }
       if (u && u.faction === game.activeFaction && !u.moved) {
         selected = u; reachable = game.reachable(u);
@@ -216,9 +216,21 @@
   $("winBtn").onclick = () => startGame();
 
   // ------------------------------- HUD -------------------------------------
-  const actBtn = $("actBtn");
+  const actBtn = $("actBtn"), undoBtn = $("undoBtn");
   actBtn.onclick = () => { if (!game.over && !anyOverlay()) game.endPhase(); };
+  undoBtn.onclick = () => {
+    if (game.over || anyOverlay()) return;
+    const u = game.undoMove();
+    if (u) { selected = u; reachable = game.reachable(u); inspected = { q: u.q, r: u.r }; renderInspector(); }
+    else { selected = null; }
+    draw(); syncSel(); syncUndo();
+  };
 
+  function syncUndo() {
+    const inMove = game.phase === "move";
+    undoBtn.classList.toggle("hidden", !inMove);
+    undoBtn.disabled = !game.canUndo();
+  }
   function syncHud() {
     const fac = factionById(game.activeFaction);
     $("turnPill").textContent = `Turn ${game.turn}/${DEF.maxTurns}`;
@@ -226,6 +238,7 @@
     $("phaseTxt").textContent = game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
+    syncUndo();
     syncSel();
   }
   function syncSel() {

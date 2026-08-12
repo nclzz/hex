@@ -45,6 +45,11 @@
   #actBtn{font-size:15px; font-weight:800; padding:11px 16px; border-radius:10px; border:none;
     color:#fff; background:var(--ink); white-space:nowrap;}
   #actBtn:active{transform:translateY(1px);}
+  #undoBtn{font-size:14px; font-weight:700; padding:11px 14px; border-radius:10px;
+    border:1px solid var(--line); background:var(--panel-d); color:var(--ink); white-space:nowrap;}
+  #undoBtn:active{transform:translateY(1px);}
+  #undoBtn:disabled{opacity:.4;}
+  #undoBtn.hidden{display:none;}
   #log{position:absolute; left:8px; right:8px; bottom:60px; text-align:center; pointer-events:none;}
   #log span{display:inline-block; background:rgba(20,18,14,.86); color:#fff; font-size:12.5px;
     padding:6px 12px; border-radius:14px; max-width:92%;}
@@ -189,6 +194,7 @@
 
   <div id="bottom">
     <div id="sel"><span class="muted">Tap a unit to select it.</span></div>
+    <button id="undoBtn" class="hidden">↶ Undo</button>
     <button id="actBtn">End Movement</button>
   </div>
 </div>

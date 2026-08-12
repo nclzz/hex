@@ -48,6 +48,25 @@ for (const nb of Hex.neighbors(anyEnemy)) {
   break;
 }
 
+/* --- undo move (fresh game so the log starts empty) --- */
+{
+  const gu = new HexWar.Game(RIDGE_ASSAULT);
+  ok(!gu.canUndo(), "canUndo false at start (empty log)");
+  ok(gu.undoMove() === null, "undo with empty log returns null");
+  const inf = gu.units.find((u) => u.type === "inf" && u.faction === "fr");
+  const from = { q: inf.q, r: inf.r };
+  const to = [...gu.reachable(inf).values()][0];
+  ok(gu.moveUnit(inf, to.q, to.r).ok, "infantry moved for undo test");
+  ok(gu.canUndo(), "canUndo true after a move");
+  const restored = gu.undoMove();
+  ok(restored === inf && inf.q === from.q && inf.r === from.r && !inf.moved, "undo restores position and flag");
+  ok(!gu.canUndo(), "nothing left to undo after undoing the only move");
+  ok(gu.moveUnit(inf, to.q, to.r).ok, "unit can move again after undo");
+  // undo history resets when the phase changes
+  gu.endPhase();
+  ok(!gu.canUndo(), "undo unavailable outside the move phase");
+}
+
 /* --- combat resolution + CRT --- */
 g.endPhase(); // move -> combat
 ok(g.phase === "combat", "advanced to combat phase");
