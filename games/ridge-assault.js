@@ -10,6 +10,10 @@
   const RIDGE_ASSAULT = {
     id: "ridge-assault",
     title: "Ridge Assault",
+    blurb: "9×11 — a short, sharp fight for one town. Fits on a phone screen.",
+    brief:
+      "The French (you go first) must capture the Town objective by the end " +
+      "of Turn 6. The Allies win by holding it.",
     orientation: "pointy",
     offsetMode: "odd-r",
     maxTurns: 6,
@@ -80,4 +84,5 @@
   };
 
   global.RIDGE_ASSAULT = RIDGE_ASSAULT;
+  (global.HEX_SCENARIOS = global.HEX_SCENARIOS || []).push(RIDGE_ASSAULT);
 })(typeof window !== "undefined" ? window : globalThis);

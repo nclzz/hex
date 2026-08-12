@@ -36,6 +36,16 @@
     return (Math.abs(dq) + Math.abs(dq + dr) + Math.abs(dr)) / 2;
   }
 
+  // Nearest hex to a fractional axial coordinate (cube rounding).
+  function round(fq, fr) {
+    const fs = -fq - fr;
+    let q = Math.round(fq), r = Math.round(fr), s = Math.round(fs);
+    const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs);
+    if (dq > dr && dq > ds) q = -r - s;
+    else if (dr > ds) r = -q - s;
+    return { q, r };
+  }
+
   function equals(a, b) { return a.q === b.q && a.r === b.r; }
 
   /* ------------------------- Layout (hex <-> pixel) ---------------------- */
@@ -46,18 +56,29 @@
       this.size = size;
       this.origin = origin;
     }
+    // Hex -> "world" position: the pixel offset at size=1, origin=(0,0). Zoom- and
+    // pan-independent, so a camera can be expressed purely in world units.
+    static worldOf(hex, orientation = "pointy") {
+      if (orientation === "pointy") {
+        return { x: Math.sqrt(3) * (hex.q + hex.r / 2), y: 1.5 * hex.r };
+      }
+      return { x: 1.5 * hex.q, y: Math.sqrt(3) * (hex.r + hex.q / 2) };
+    }
+
     center(hex) {
       const s = this.size, o = this.origin;
+      const w = Layout.worldOf(hex, this.orientation);
+      return { x: o.x + s * w.x, y: o.y + s * w.y };
+    }
+
+    // Inverse of center(): pixel point -> the hex containing it.
+    pixelToHex(px, py) {
+      const s = this.size;
+      const x = (px - this.origin.x) / s, y = (py - this.origin.y) / s;
       if (this.orientation === "pointy") {
-        return {
-          x: o.x + s * Math.sqrt(3) * (hex.q + hex.r / 2),
-          y: o.y + s * 1.5 * hex.r,
-        };
+        return round((Math.sqrt(3) / 3) * x - y / 3, (2 / 3) * y);
       }
-      return {
-        x: o.x + s * 1.5 * hex.q,
-        y: o.y + s * Math.sqrt(3) * (hex.r + hex.q / 2),
-      };
+      return round((2 / 3) * x, -x / 3 + (Math.sqrt(3) / 3) * y);
     }
     // The six polygon corners (for drawing / hit-testing).
     corners(hex) {
@@ -73,10 +94,7 @@
     static unitBounds(hexes, orientation = "pointy") {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const h of hexes) {
-        const x = orientation === "pointy"
-          ? Math.sqrt(3) * (h.q + h.r / 2) : 1.5 * h.q;
-        const y = orientation === "pointy"
-          ? 1.5 * h.r : Math.sqrt(3) * (h.r + h.q / 2);
+        const { x, y } = Layout.worldOf(h, orientation);
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
       }
@@ -131,7 +149,7 @@
   }
 
   global.Hex = {
-    DIRS, key, parseKey, offsetToAxial, neighbors, distance, equals,
+    DIRS, key, parseKey, offsetToAxial, neighbors, distance, equals, round,
     Layout, reachable,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Ridge Assault — Hex Wargame</title>
+<title>Hex Wargame</title>
 <style>
   :root{
     --blue:#2b5fa8; --blue-d:#1c3f70;
@@ -33,8 +33,12 @@
 
   /* Board */
   #boardWrap{flex:1 1 auto; position:relative; min-height:0; background:#3a3527;
-    display:flex; align-items:center; justify-content:center;}
+    display:flex; align-items:center; justify-content:center; overflow:hidden;}
   canvas{display:block; touch-action:none;}
+  /* Shown only while the map extends past the viewport — the cue that there
+     is more board out there, and the way back to the whole picture. */
+  #boardWrap.overflowing::after{content:""; position:absolute; inset:0; z-index:5;
+    pointer-events:none; box-shadow:inset 0 0 26px 6px rgba(20,18,14,.5);}
 
   /* Bottom bar */
   #bottom{flex:0 0 auto; background:var(--panel); border-top:2px solid var(--line);
@@ -99,10 +103,29 @@
   #winCard{color:#fff;} #winCard .big{font-size:26px; font-weight:900; margin:8px 0;}
   #winCard .sub{opacity:.85; font-size:14px; max-width:280px; margin:6px auto 16px;}
   #winCard button{background:#fff; color:var(--ink); font-weight:800; font-size:15px;
-    padding:11px 22px; border-radius:10px; border:none;}
+    padding:11px 22px; border-radius:10px; border:none; margin:0 4px;}
+  #winPickBtn{background:transparent; color:#fff; border:1px solid rgba(255,255,255,.45);}
 
   #help{position:absolute; top:8px; right:8px; z-index:10; width:26px; height:26px; border-radius:50%;
     background:rgba(20,18,14,.7); color:#fff; border:none; font-weight:800; font-size:15px;}
+  #fitBtn{position:absolute; top:8px; right:40px; z-index:10; height:26px; padding:0 10px;
+    border-radius:13px; background:rgba(20,18,14,.7); color:#fff; border:none;
+    font-weight:700; font-size:12px;}
+  #fitBtn.hidden{display:none;}
+
+  /* Start screen — pick a scenario. With no game running the HUD and the
+     action bar have nothing to say, so the picker gets the whole screen. */
+  body.nogame #hud, body.nogame #bottom, body.nogame #help, body.nogame #fitBtn{display:none;}
+  #startOv{background:rgba(18,16,12,.96);}
+  #startCard{color:#fff; width:min(360px,92vw);}
+  #startCard h2{margin:0 0 4px; font-size:22px; font-weight:900;}
+  #startCard .sub{opacity:.75; font-size:13px; margin-bottom:16px;}
+  .scenBtn{display:block; width:100%; text-align:left; margin-bottom:10px; padding:12px 14px;
+    border-radius:12px; border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08);
+    color:#fff; font:inherit;}
+  .scenBtn:active{background:rgba(255,255,255,.18);}
+  .scenBtn .t{font-size:16px; font-weight:800;}
+  .scenBtn .b{font-size:12.5px; opacity:.78; margin-top:3px; line-height:1.35;}
   #helpOv{background:rgba(18,16,12,.92);}
   #helpCard{color:#fff; text-align:left; max-width:340px; font-size:13px; line-height:1.5;}
   #helpCard h3{margin:0 0 8px; text-align:center;}
@@ -123,6 +146,7 @@
 
   <div id="boardWrap">
     <canvas id="cv"></canvas>
+    <button id="fitBtn" class="hidden">Fit</button>
     <button id="help">?</button>
     <div id="log"></div>
 
@@ -170,25 +194,33 @@
         <div class="big" id="winTitle">Victory</div>
         <div class="sub" id="winSub"></div>
         <button id="winBtn">Play Again</button>
+        <button id="winPickBtn">Choose scenario</button>
+      </div>
+    </div>
+
+    <!-- Start screen: choose a scenario -->
+    <div id="startOv" class="overlay">
+      <div id="startCard">
+        <h2>Hex Wargame</h2>
+        <div class="sub">Hot-seat, two players, one device. Choose a battle.</div>
+        <div id="scenList"></div>
       </div>
     </div>
 
     <!-- Help overlay -->
     <div id="helpOv" class="overlay">
       <div id="helpCard">
-        <h3>Ridge Assault — How to play</h3>
-        <p><b>Goal.</b> The <b style="color:#7fa8e6">French</b> (you go first) must capture the
-        <b>Town</b> objective by the end of Turn 6. The <b style="color:#e69090">Allies</b> win by holding it.</p>
+        <h3 id="helpTitle">How to play</h3>
+        <p><b>Goal.</b> <span id="helpBrief"></span></p>
         <p><b>Each turn</b> a side does <b>Movement</b> then <b>Combat</b>, then passes the phone.</p>
         <p><b>Move:</b> tap your unit, then tap a highlighted hex. Entering an enemy's
         surrounding hexes (Zone of Control) stops the unit.</p>
         <p><b>Fight:</b> in the Combat phase tap an enemy next to your units. All your adjacent
         units join the attack; odds &amp; a die decide the result.</p>
+        <p><b>Get around:</b> <b>drag</b> to scroll the map, <b>pinch</b> (or scroll-wheel) to
+        zoom. <b>Fit</b>, top right, shows the whole battlefield at once.</p>
         <p><b>Counters</b> show a letter (I/C/A/G) and <b>CS·MA</b> — combat strength &amp; movement.</p>
-        <p><span class="k" style="background:#cfe3b8"></span>Clear
-           <span class="k" style="background:#5a8f4e"></span>Woods (×2 def)
-           <span class="k" style="background:#c9a36a"></span>Hill (×3 def)
-           <span class="k" style="background:#b9b2a6"></span>Town (×3 def)</p>
+        <p id="helpTerrain"></p>
         <button id="helpClose">Got it</button>
       </div>
     </div>
@@ -211,8 +243,9 @@
 <script src="src/hex.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/renderer.js"></script>
-<!-- Game definition (data on top of the engine) -->
+<!-- Game definitions (data on top of the engine); each registers itself -->
 <script src="games/ridge-assault.js"></script>
+<script src="games/sambre-crossing.js"></script>
 <!-- Application glue (input, HUD, overlays) -->
 <script src="app.js"></script>
 </body>
