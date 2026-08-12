@@ -42,11 +42,13 @@
   #sel{font-size:12px; line-height:1.25; flex:1; min-width:0;}
   #sel b{font-size:13px;}
   #sel .muted{opacity:.7;}
-  #actBtn{font-size:15px; font-weight:800; padding:11px 16px; border-radius:10px; border:none;
+  #actBtn{height:44px; padding:0 16px; display:inline-flex; align-items:center;
+    font-size:15px; font-weight:800; border-radius:10px; border:none;
     color:#fff; background:var(--ink); white-space:nowrap;}
   #actBtn:active{transform:translateY(1px);}
-  #undoBtn{font-size:20px; font-weight:700; line-height:1; width:46px; height:46px; padding:0;
-    border-radius:10px; border:1px solid var(--line); background:var(--panel-d); color:var(--ink);}
+  #undoBtn{width:44px; height:44px; padding:0; display:inline-flex; align-items:center;
+    justify-content:center; border-radius:10px; border:1px solid var(--line);
+    background:var(--panel-d); color:var(--ink);}
   #undoBtn:active{transform:translateY(1px);}
   #undoBtn:disabled{opacity:.4;}
   #undoBtn.hidden{display:none;}
@@ -194,7 +196,13 @@
 
   <div id="bottom">
     <div id="sel"><span class="muted">Tap a unit to select it.</span></div>
-    <button id="undoBtn" class="hidden" aria-label="Undo last move" title="Undo">↶</button>
+    <button id="undoBtn" class="hidden" aria-label="Undo last move" title="Undo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 14 4 9l5-5"/>
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H10"/>
+      </svg>
+    </button>
     <button id="actBtn">End Movement</button>
   </div>
 </div>
