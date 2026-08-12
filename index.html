@@ -49,6 +49,22 @@
   #log span{display:inline-block; background:rgba(20,18,14,.86); color:#fff; font-size:12.5px;
     padding:6px 12px; border-radius:14px; max-width:92%;}
 
+  /* Hex inspector panel */
+  #hexInfo{position:absolute; left:8px; bottom:8px; z-index:12; max-width:58%;
+    background:rgba(20,18,14,.9); color:#fff; border:1px solid rgba(255,255,255,.18);
+    border-radius:12px; padding:8px 10px 9px; font-size:12px; line-height:1.35;
+    box-shadow:0 6px 20px rgba(0,0,0,.45);}
+  #hexInfo.hidden{display:none;}
+  #hexInfo .hiTitle{font-weight:800; font-size:13.5px; display:flex; align-items:center; gap:6px;}
+  #hexInfo .hiSwatch{width:12px; height:12px; border-radius:3px; border:1px solid rgba(255,255,255,.4); flex:0 0 auto;}
+  #hexInfo .hiStats{opacity:.85; margin-top:1px;}
+  #hexInfo .hiEffect{margin-top:4px;}
+  #hexInfo .hiObj{margin-top:4px; color:#f4d23a; font-weight:600;}
+  #hexInfo .hiUnit{margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,.16); font-weight:600;}
+  #hexInfo .hiUnit .tag{opacity:.7; font-weight:400; font-style:italic;}
+  #hexInfoClose{position:absolute; top:4px; right:5px; width:20px; height:20px; border:none;
+    background:transparent; color:rgba(255,255,255,.75); font-size:16px; font-weight:800; line-height:1;}
+
   /* Overlays */
   .overlay{position:absolute; inset:0; z-index:20; display:none; align-items:center;
     justify-content:center; padding:22px; text-align:center;}
@@ -102,6 +118,16 @@
     <canvas id="cv"></canvas>
     <button id="help">?</button>
     <div id="log"></div>
+
+    <!-- Hex inspector: terrain + effect + occupant, updated on tap -->
+    <div id="hexInfo" class="hidden">
+      <button id="hexInfoClose" aria-label="Close">×</button>
+      <div class="hiTitle"><span class="hiSwatch"></span><span class="hiName"></span></div>
+      <div class="hiStats"></div>
+      <div class="hiEffect"></div>
+      <div class="hiObj" hidden></div>
+      <div class="hiUnit" hidden></div>
+    </div>
 
     <!-- Pass-the-phone overlay -->
     <div id="passOv" class="overlay">

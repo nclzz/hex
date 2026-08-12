@@ -15,6 +15,7 @@
   // ------------------------------- game/renderer ---------------------------
   let game, renderer;
   let selected = null, reachable = new Map();
+  let inspected = null; // hex {q,r} shown in the terrain inspector
   const factionById = (id) => DEF.factions.find((f) => f.id === id);
 
   renderer = new global.HexRenderer(canvas, {
@@ -73,6 +74,7 @@
           hs.push({ hex: e, stroke: "rgba(210,40,40,.9)", lineWidth: 3, scale: 0.96 });
       }
     }
+    if (inspected) hs.push({ hex: inspected, stroke: "rgba(255,255,255,.85)", lineWidth: 2, scale: 0.9 });
     return hs;
   }
   function draw() {
@@ -88,28 +90,72 @@
     if (game.over || anyOverlay()) return;
     const rect = canvas.getBoundingClientRect();
     const hex = renderer.pick(game, ev.clientX - rect.left, ev.clientY - rect.top);
-    if (!hex) { selected = null; reachable = new Map(); draw(); syncSel(); return; }
+    if (!hex) { selected = null; reachable = new Map(); inspected = null; renderInspector(); draw(); syncSel(); return; }
     onHex(hex.q, hex.r);
   });
 
   function onHex(q, r) {
+    inspected = { q, r }; // every board tap inspects the hex
     const u = game.unitAt(q, r);
     if (game.phase === "move") {
       if (selected && reachable.has(global.Hex.key(q, r))) {
         game.moveUnit(selected, q, r);
-        selected = null; reachable = new Map(); draw(); syncSel(); return;
+        selected = null; reachable = new Map(); renderInspector(); draw(); syncSel(); return;
       }
       if (u && u.faction === game.activeFaction && !u.moved) {
         selected = u; reachable = game.reachable(u);
       } else { selected = null; reachable = new Map(); }
-      draw(); syncSel();
+      renderInspector(); draw(); syncSel();
     } else { // combat
       if (u && u.faction !== game.activeFaction) {
         const atk = game.attackersFor(u);
         if (atk.length) openCombat(u, atk);
-      } else { selected = null; draw(); syncSel(); }
+      } else { selected = null; }
+      renderInspector(); draw(); syncSel();
     }
   }
+
+  // --------------------------- hex inspector -------------------------------
+  function renderInspector() {
+    const el = $("hexInfo");
+    if (!inspected) { el.classList.add("hidden"); return; }
+    const { q, r } = inspected;
+    const hx = game.hex(q, r);
+    if (!hx) { el.classList.add("hidden"); return; }
+    const t = DEF.terrain[hx.terrain];
+    el.querySelector(".hiSwatch").style.background = t.color;
+    el.querySelector(".hiName").textContent = t.name;
+    const plural = t.moveCost === 1 ? "" : "s";
+    el.querySelector(".hiStats").textContent =
+      `Enter: ${t.moveCost} MP · Defense ×${t.defMult}`;
+    const effect = t.passable === false
+      ? "Impassable — units cannot enter."
+      : `Costs ${t.moveCost} movement point${plural} to enter. ` +
+        (t.defMult === 1 ? "No defensive bonus here." : `Units defending here fight at ×${t.defMult} strength.`);
+    el.querySelector(".hiEffect").textContent = effect;
+
+    const objEl = el.querySelector(".hiObj");
+    if (game.isObjective(q, r)) {
+      const owner = factionById((game.objectives.find((o) => o.q === q && o.r === r) || {}).owner);
+      objEl.textContent = `★ Objective — ${owner ? owner.name : "a side"} wins by holding this hex.`;
+      objEl.hidden = false;
+    } else objEl.hidden = true;
+
+    const unitEl = el.querySelector(".hiUnit");
+    const u = game.unitAt(q, r);
+    if (u) {
+      const fac = factionById(u.faction), ut = game.typeOf(u);
+      let tag = "";
+      if (game.phase === "move" && u.faction === game.activeFaction && u.moved) tag = " (moved)";
+      else if (game.phase === "combat" && u.faction === game.activeFaction && u.acted) tag = " (attacked)";
+      unitEl.innerHTML = `${fac.name} ${ut.name} · CS ${ut.combat} · MA ${ut.move}` +
+        (tag ? `<span class="tag">${tag}</span>` : "");
+      unitEl.hidden = false;
+    } else unitEl.hidden = true;
+
+    el.classList.remove("hidden");
+  }
+  $("hexInfoClose").onclick = () => { inspected = null; renderInspector(); draw(); };
 
   // --------------------------- combat dialog -------------------------------
   let pending = null;
@@ -208,9 +254,9 @@
   // ------------------------------- lifecycle -------------------------------
   function startGame() {
     game = new Game(DEF);
-    selected = null; reachable = new Map();
+    selected = null; reachable = new Map(); inspected = null; renderInspector();
     game.events.on("sideChange", () => { selected = null; showPass(); });
-    game.events.on("phase", () => { selected = null; reachable = new Map(); syncHud(); draw(); });
+    game.events.on("phase", () => { selected = null; reachable = new Map(); inspected = null; renderInspector(); syncHud(); draw(); });
     game.events.on("gameover", ({ winner, reason }) => {
       const fac = winner ? factionById(winner) : null;
       $("winTitle").textContent = fac ? fac.name + " Victory" : "Draw";
