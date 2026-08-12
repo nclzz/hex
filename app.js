@@ -251,9 +251,9 @@
       return;
     }
     if (selected) {
-      const t = game.typeOf(selected);
-      el.innerHTML = `<b>${t.name}</b> · CS ${t.combat} · MA ${t.move} ` +
-        `<span class="muted">— ${reachable.size ? "tap a green hex (" + reachable.size + ")" : "no moves"}</span>`;
+      el.innerHTML = reachable.size
+        ? `<b>Move.</b> Tap a highlighted hex. <span class="muted">(${reachable.size} option${reachable.size > 1 ? "s" : ""})</span>`
+        : `<b>Move.</b> <span class="muted">This unit has no available moves.</span>`;
     } else {
       const left = game.living(game.activeFaction).filter((u) => !u.moved).length;
       el.innerHTML = `<span class="muted">Movement. Tap one of your units to move it. (${left} unmoved)</span>`;
