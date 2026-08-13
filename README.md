@@ -17,33 +17,20 @@ vanilla JavaScript, so it runs by just opening a file.
 
 ## Play it on your phone (no deploy)
 
-Pick whichever is easiest for you:
-
-### Option A — Local server on your computer (recommended for phone)
-The game is a few small files, so serve the folder and open it from your phone
-on the **same Wi‑Fi**:
+Serve the folder and open it from your phone on the **same Wi‑Fi** — nothing
+leaves your network:
 
 ```bash
-cd hex
-python3 -m http.server 8000
+cd hex && python3 -m http.server 8000
 ```
 
-Then find your computer's LAN IP (e.g. `192.168.1.23`) and open
-`http://192.168.1.23:8000` in your phone's browser. This is not a "deploy" —
-nothing leaves your network.
+Then open `http://<your-LAN-IP>:8000` on the phone. Find the IP with
+`ipconfig getifaddr en0` (macOS), `hostname -I` (Linux) or `ipconfig` → IPv4
+Address (Windows).
 
-- macOS: `ipconfig getifaddr en0`
-- Linux: `hostname -I`
-- Windows: `ipconfig` → IPv4 Address
-
-### Option B — Open it directly
-Open `index.html` in any browser (desktop works from `file://`). To run from a
-phone this way you'd need the whole `hex/` folder on the device; the local‑server
-option above is usually simpler.
-
-### Option C — GitHub Pages (a one‑click host, if you ever want a URL)
-Repo **Settings → Pages → Deploy from branch**, pick this branch, root folder.
-You'll get a URL you can open anywhere. (Technically a deploy, but zero infra.)
+On a desktop you can skip the server and open `index.html` from `file://`. For a
+real URL, **Settings → Pages → Deploy from branch** gives you GitHub Pages off
+this repo's root, with no other infrastructure.
 
 > Tip: in a mobile browser use "Add to Home Screen" to get a full‑screen,
 > app‑like launcher.
@@ -73,12 +60,11 @@ The board can be larger than the screen. A camera handles that:
 | **Pinch** (or scroll wheel) | zoom, around your fingers / the cursor |
 | **Fit** button, top right | frame the whole battlefield; tap again to go back |
 
-Tapping still selects and moves — a tap only counts if you barely moved, so you
-can never nudge a unit while scrolling. The map can't be dragged off into
-nothing, and the camera follows the action: selecting a unit, attacking, undoing
-or being handed the device brings the relevant hexes on screen. On a map that
-already fits (Ridge Assault on a phone) nothing changes — you see the whole
-board, and the **Fit** button stays out of the way.
+A tap only counts if you barely moved, so scrolling can never nudge a unit. The
+map can't be dragged off into nothing, and the camera follows the action —
+selecting, attacking, undoing and being handed the device all bring the relevant
+hexes on screen. On a board that already fits (Ridge Assault on a phone) nothing
+changes, and the **Fit** button stays out of the way.
 
 ### The scenarios
 
@@ -139,30 +125,26 @@ test/
 
 ### The camera
 
-Because `Layout.center()` is affine in `size` and `origin`, the camera needs no
-canvas transform: **zoom scales `size`, pan translates `origin`**, so drawing
-and hit-testing stay in one coordinate system. The renderer keeps `zoom` (1 =
-the whole board fits, the old auto-fit) and `cam`, the *world* point at the
-centre of the viewport — world coordinates being hex positions at `size = 1`,
-independent of both zoom and pan. Panning is clamped per axis, so an axis the
-board doesn't fill stays centred and one it overflows can't be dragged past its
-edge. A resize holds the on-screen hex size rather than the zoom ratio, so
-rotating the device doesn't resize your counters.
+`Layout.center()` is affine in `size` and `origin`, so the camera needs no canvas
+transform: **zoom scales `size`, pan translates `origin`**, and drawing and
+hit-testing stay in one coordinate system. The renderer keeps `zoom` (1 = the
+whole board fits) and `cam`, the world point at the centre of the viewport.
+Panning is clamped per axis — an axis the board doesn't fill stays centred, one
+it overflows can't be dragged past its edge.
 
 ### Make your own scenario
-Copy `games/ridge-assault.js`, edit the data — `unitTypes`, `terrain`, the ASCII
-`map`, `setup`, `maxTurns`, and the `victory()` goal — add a `<script>` tag for
-it in `index.html`, and keep the last line that pushes it onto
-`global.HEX_SCENARIOS`: that's what puts it on the start screen. `title`,
-`blurb` and `brief` are what the picker and the help overlay display. You can
-override any rule (movement cost, ZOC, the whole CRT, odds mapping, die roll) by
-supplying a `rules: { ... }` block; otherwise the engine's defaults apply.
+Copy `games/ridge-assault.js` and edit the data: `unitTypes`, `terrain`, the
+ASCII `map`, `setup`, `maxTurns`, the `victory()` goal, and the `title`/`blurb`/
+`brief` the picker and help overlay display. Add a `<script>` tag in
+`index.html`, and keep the last line pushing the def onto `global.HEX_SCENARIOS`
+— that's what puts it on the start screen. Any rule (movement cost, ZOC, the
+whole CRT, odds mapping, die roll) can be overridden with a `rules: { ... }`
+block; otherwise the engine's defaults apply.
 
 Maps may be any size — the camera handles the rest — and may be ragged (a space
-character means "no hex here"). Terrain with `passable: false` is a wall, which
-is how Sambre Crossing's river works.
-
-The engine is the reusable core; scenarios are thin data + a few callbacks.
+means "no hex here"). Terrain with `passable: false` is a wall, which is how
+Sambre Crossing's river works. The engine is the reusable core; scenarios are
+thin data plus a few callbacks.
 
 ---
 
@@ -172,21 +154,13 @@ The engine is the reusable core; scenarios are thin data + a few callbacks.
 npm test          # pure Node, no install needed
 ```
 
-`engine.test.js` drives the rules headlessly (movement, ZOC, combat/CRT, both
-victory conditions). `camera.test.js` drives the renderer's camera against stub
-canvas/container objects — pan clamping, zoom about a focal point, `pixelToHex`
-round-trips, and that `fit()` still frames a board exactly as it always did —
-and checks the scenarios themselves: map dimensions, that every unit and
-objective sits on a real passable hex, and that both armies can actually walk to
-every objective (which is what catches a typo in the river).
+- `engine.test.js` — the rules: movement, ZOC, combat/CRT, both victory conditions.
+- `camera.test.js` — the camera, against stub canvas/container objects: pan
+  clamping, zoom about a focal point, `pixelToHex` round-trips, and that `fit()`
+  still frames a board exactly as it always did. It also checks the scenarios
+  themselves — map dimensions, every unit and objective on a real passable hex,
+  and both armies able to walk to every objective, which is what catches a typo
+  in the river.
 
 The UI is verified separately by loading `index.html` in a headless browser;
 that check is optional and not required to run or hack on the game.
-
----
-
-## Roadmap (kept out of v1 on purpose)
-
-AI opponent, unit stacking, player-chosen retreats, fog of war, a mini-map,
-smooth (animated) camera moves, save & resume, sound. Each is an additive change
-because the rules live in one place and scenarios are just data.
