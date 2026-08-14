@@ -19,11 +19,11 @@
     maxTurns: 6,
     phases: ["move", "combat"],
 
-    // combat = strength, move = movement allowance.
+    // combat = strength, move = movement allowance, range = attack reach (default 1).
     unitTypes: {
       inf: { name: "Infantry",  glyph: "I", combat: 4, move: 4 },
       cav: { name: "Cavalry",   glyph: "C", combat: 3, move: 8 },
-      art: { name: "Artillery", glyph: "A", combat: 5, move: 3 },
+      art: { name: "Artillery", glyph: "A", combat: 5, move: 3, range: 2 },
       grd: { name: "Guard",     glyph: "G", combat: 6, move: 4 },
     },
 

@@ -84,6 +84,116 @@ ok(g.oddsColumn(10, 2) === "5:1", "10:2 -> 5:1 column");
 ok(g.oddsColumn(4, 4) === "1:1", "4:4 -> 1:1 column");
 ok(g.oddsColumn(1, 3) === "1:2", "weak attack clamps to 1:2");
 
+/* --- ranged artillery: target eligibility --- */
+{
+  const at = (c, r) => Hex.offsetToAxial(c, r);
+  const gr = new HexWar.Game(RIDGE_ASSAULT);
+  gr.endPhase(); // French move -> combat
+  const D = gr.enemiesOf("fr")[0];
+  const art = gr.units.find((u) => u.faction === "fr" && u.type === "art");
+  const inf = gr.units.find((u) => u.faction === "fr" && u.type === "inf");
+  ok(gr.range(art) === 2 && gr.range(inf) === 1, "artillery range 2, others default to 1");
+  Object.assign(D, at(4, 7));
+  Object.assign(art, at(2, 7)); // distance 2 — in gun range
+  Object.assign(inf, at(3, 7)); // distance 1 — engaged
+  ok(Hex.distance(art, D) === 2 && Hex.distance(inf, D) === 1, "ranged test layout holds");
+  const atk = gr.attackersFor(D);
+  ok(atk.includes(art), "artillery can attack at distance 2");
+  ok(atk.includes(inf), "adjacent unit still attacks");
+  Object.assign(art, at(1, 7)); // distance 3 — beyond range
+  ok(!gr.attackersFor(D).includes(art), "artillery excluded at distance 3");
+  Object.assign(inf, at(2, 7)); // infantry at distance 2
+  ok(!gr.attackersFor(D).includes(inf), "range 1 unit excluded at distance 2");
+  ok(gr.attackerStrength([art]) === 5, "strength undiminished at range");
+}
+
+/* --- ranged artillery: end-to-end bombardment via resolveCombat --- */
+{
+  const at = (c, r) => Hex.offsetToAxial(c, r);
+  const gr = new HexWar.Game(RIDGE_ASSAULT);
+  gr.rng = () => 0.99; // die = 6
+  gr.endPhase();
+  const D = gr.enemiesOf("fr")[0];
+  const art = gr.units.find((u) => u.faction === "fr" && u.type === "art");
+  const inf = gr.units.find((u) => u.faction === "fr" && u.type === "inf");
+  Object.assign(D, at(4, 7)); Object.assign(art, at(2, 7)); Object.assign(inf, at(3, 7));
+  const res = gr.resolveCombat(D); // attackers auto-gathered
+  ok(res.ok && res.attackers.includes(art) && res.attackers.includes(inf), "auto-gather includes the gun at range");
+  ok(res.atk === 9, "combined strength 5+4 regardless of distance");
+  ok(res.code === "De" && !D.alive, "2:1 at die 6 destroys the defender");
+  ok(art.acted && inf.acted, "bombarding spends the gun's attack");
+}
+
+/* --- bombardment safety: adverse results spare units firing at range --- */
+{
+  const at = (c, r) => Hex.offsetToAxial(c, r);
+  // D at (4,7); the gun bombards from (6,7), distance 2; each case adds its
+  // own engaged unit adjacent at (3,7).
+  const fresh = () => {
+    const t = new HexWar.Game(RIDGE_ASSAULT);
+    const D = t.enemiesOf("fr")[0];
+    const art = t.units.find((u) => u.faction === "fr" && u.type === "art");
+    Object.assign(D, at(4, 7)); Object.assign(art, at(6, 7));
+    return { t, D, art };
+  };
+  const adjacent = (t, type) => {
+    const u = t.units.find((x) => x.faction === "fr" && x.type === type);
+    Object.assign(u, at(3, 7));
+    return u;
+  };
+
+  { // Ae, pure bombardment: no engaged unit to lose
+    const { t, D, art } = fresh();
+    const note = t.applyResult("Ae", D, [art]);
+    ok(art.alive && D.alive, "Ae costs a lone bombarding gun nothing");
+    ok(/no losses/i.test(note), "Ae bombardment note explains it");
+  }
+  { // Ae, mixed: the weakest ENGAGED unit dies, even though the gun is cheaper
+    const { t, D, art } = fresh();
+    const grd = adjacent(t, "grd"); // CS 6 > art's 5
+    t.applyResult("Ae", D, [art, grd]);
+    ok(!grd.alive && art.alive, "Ae kills the engaged unit, never the bombarding gun");
+  }
+  { // Ar, mixed: only the engaged unit is pushed back
+    const { t, D, art } = fresh();
+    const inf = adjacent(t, "inf");
+    const gunPos = { q: art.q, r: art.r };
+    t.applyResult("Ar", D, [art, inf]);
+    ok(Hex.distance(inf, D) === 2, "Ar retreats the engaged unit");
+    ok(art.q === gunPos.q && art.r === gunPos.r, "Ar leaves the bombarding gun in place");
+  }
+  { // Ar, pure bombardment: nobody moves
+    const { t, D, art } = fresh();
+    const gunPos = { q: art.q, r: art.r };
+    const note = t.applyResult("Ar", D, [art]);
+    ok(art.q === gunPos.q && art.r === gunPos.r, "Ar on a pure bombardment moves no one");
+    ok(/unharmed/i.test(note), "Ar bombardment note explains it");
+  }
+  { // Ex, mixed: losses come from engaged units only
+    const { t, D, art } = fresh();
+    const inf = adjacent(t, "inf");
+    t.applyResult("Ex", D, [art, inf]);
+    ok(!D.alive, "Ex kills the defender");
+    ok(!inf.alive && art.alive, "Ex losses fall on the engaged unit, not the gun");
+  }
+  { // Ex, pure bombardment: defender still dies, gun pays nothing
+    const { t, D, art } = fresh();
+    t.applyResult("Ex", D, [art]);
+    ok(!D.alive && art.alive, "Ex on a pure bombardment still kills the defender");
+  }
+  { // Dr, mixed with the gun listed first: retreat is away from the ENGAGED unit
+    const { t, D, art } = fresh();
+    const inf = adjacent(t, "inf"); // west of D; the gun is east of D
+    t.applyResult("Dr", D, [art, inf]);
+    ok(D.alive && Hex.distance(D, inf) === 3, "Dr retreats the defender away from the engaged unit");
+  }
+  { // Dr, pure bombardment: falls back to retreating from the gun
+    const { t, D, art } = fresh();
+    t.applyResult("Dr", D, [art]);
+    ok(D.alive && Hex.distance(D, art) === 4, "Dr on a pure bombardment retreats from the gun");
+  }
+}
+
 /* --- victory by objective --- */
 let g2 = new HexWar.Game(RIDGE_ASSAULT);
 const obj = g2.objectives[0];

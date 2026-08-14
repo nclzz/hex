@@ -44,10 +44,13 @@ Both scenarios share the same rules; only the map, the armies and the goal diffe
 - Each turn a side plays **Movement**, then **Combat**, then passes the device.
 - **Move:** tap your unit → tap a highlighted (green) hex. Entering the six hexes
   around an enemy unit (its *Zone of Control*) stops your unit.
-- **Combat:** in the Combat phase, tap an enemy adjacent to your units. Every one
-  of your adjacent, unused units joins the attack. Odds + a die roll on the
-  Combat Results Table decide the outcome.
+- **Combat:** in the Combat phase, tap an enemy adjacent to your units —
+  **Artillery can also fire from 2 hexes away**. Every one of your in-range,
+  unused units joins the attack. Odds + a die roll on the Combat Results Table
+  decide the outcome. Units firing from range bombard: they never suffer
+  attacker losses or retreats, only adjacent attackers do.
 - Counters read **letter + `CS·MA`** — combat strength and movement allowance.
+  Artillery adds a third number, its **range**.
 - **Tap a hex** to inspect its terrain, and **Undo** takes back your last move.
 
 ### Save & resume
@@ -85,12 +88,12 @@ side holding more towns wins (a tie favours the Allies). The **river is
 impassable** and has only **three fords**, so the game is about which crossing
 you commit to — and 11 units a side means the flanks are a long march away.
 
-| Unit | CS | MA |
-|------|----|----|
-| **I**nfantry | 4 | 4 |
-| **C**avalry | 3 | 8 |
-| **A**rtillery | 5 | 3 |
-| **G**uard | 6 | 4 |
+| Unit | CS | MA | Range |
+|------|----|----|-------|
+| **I**nfantry | 4 | 4 | 1 |
+| **C**avalry | 3 | 8 | 1 |
+| **A**rtillery | 5 | 3 | 2 |
+| **G**uard | 6 | 4 | 1 |
 
 | Terrain | Move cost | Defender ×  | Where |
 |---------|-----------|-------------|-------|
@@ -143,7 +146,8 @@ it overflows can't be dragged past its edge.
 ### Make your own scenario
 Copy `games/ridge-assault.js` and edit the data: `unitTypes`, `terrain`, the
 ASCII `map`, `setup`, `maxTurns`, the `victory()` goal, and the `title`/`blurb`/
-`brief` the picker and help overlay display. Add a `<script>` tag in
+`brief` the picker and help overlay display. Any unit type may set `range`
+(attack reach in hexes, default 1) to fire without being adjacent. Add a `<script>` tag in
 `index.html`, and keep the last line pushing the def onto `global.HEX_SCENARIOS`
 — that's what puts it on the start screen. Any rule (movement cost, ZOC, the
 whole CRT, odds mapping, die roll) can be overridden with a `rules: { ... }`
