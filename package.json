@@ -4,6 +4,6 @@
   "description": "A small, reusable hex wargame engine (SPI 'Napoleon at Waterloo' lineage) with two scenarios: Ridge Assault and the larger-than-the-screen Sambre Crossing.",
   "private": true,
   "scripts": {
-    "test": "node test/engine.test.js && node test/camera.test.js"
+    "test": "node test/engine.test.js && node test/camera.test.js && node test/persist.test.js"
   }
 }

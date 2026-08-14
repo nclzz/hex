@@ -50,6 +50,14 @@ Both scenarios share the same rules; only the map, the armies and the goal diffe
 - Counters read **letter + `CS·MA`** — combat strength and movement allowance.
 - **Tap a hex** to inspect its terrain, and **Undo** takes back your last move.
 
+### Save & resume
+
+The game autosaves after every action to the browser's localStorage — one slot.
+Close the tab (or the home-screen app) mid-battle and the start screen offers
+**Continue** with the turn, side and phase you left; starting a new battle
+abandons it. Saves never leave the device, and in private browsing the game
+simply runs without persistence.
+
 ### Getting around a big map
 
 The board can be larger than the screen. A camera handles that:

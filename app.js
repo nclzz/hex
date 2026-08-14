@@ -12,6 +12,39 @@
   const $ = (id) => document.getElementById(id);
   const boardWrap = $("boardWrap"), canvas = $("cv");
 
+  // ------------------------------ persistence ------------------------------
+  // One autosave slot in localStorage. Every access is guarded: Safari private
+  // mode throws on write, and some contexts throw on merely touching
+  // localStorage — failure just means the game runs without persistence.
+  const SAVE_KEY = "hexwar.save.v1";
+  const lsGet = (k) => { try { return global.localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { global.localStorage.setItem(k, v); } catch (e) { /* no persistence */ } };
+  const lsDel = (k) => { try { global.localStorage.removeItem(k); } catch (e) { /* no persistence */ } };
+
+  function save() {
+    if (!game || game.over) return; // a finished game never claims the slot
+    lsSet(SAVE_KEY, JSON.stringify({
+      v: 1, scenarioId: DEF.id, game: game.serialize(),
+      camera: { zoom: renderer.zoom, cam: { x: renderer.cam.x, y: renderer.cam.y } },
+    }));
+  }
+  function clearSave() { lsDel(SAVE_KEY); }
+
+  // The stored save, or null. Trial-restores the game so the Continue card is
+  // only ever offered for a save that will actually load.
+  function loadSave() {
+    const raw = lsGet(SAVE_KEY);
+    if (!raw) return null;
+    try {
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1) return null;
+      const def = (global.HEX_SCENARIOS || []).find((d) => d.id === data.scenarioId);
+      if (!def) return null;
+      Game.restore(def, data.game);
+      return { def, data };
+    } catch (e) { clearSave(); return null; }
+  }
+
   // ------------------------------- game/renderer ---------------------------
   let DEF = null;               // the scenario currently being played
   let game = null, renderer = null;
@@ -371,7 +404,11 @@
     show("passOv");
   }
   $("passOv").addEventListener("pointerdown", () => {
-    hide("passOv"); focusActive(); syncHud(); draw(); syncSel(); syncFit();
+    hide("passOv");
+    // On a resumed game the first dismissal must not recenter the camera the
+    // player left behind; every later turn hand-off refocuses as usual.
+    if (resumedCamera) resumedCamera = false; else focusActive();
+    syncHud(); draw(); syncSel(); syncFit();
   });
   $("help").onclick = () => show("helpOv");
   $("helpClose").onclick = () => hide("helpOv");
@@ -383,6 +420,20 @@
   function showStart() {
     const list = $("scenList");
     list.innerHTML = "";
+    const s = loadSave();
+    if (s) {
+      const b = document.createElement("button");
+      b.className = "scenBtn cont";
+      const t = document.createElement("div"); t.className = "t";
+      t.textContent = `Continue — ${s.def.title}`;
+      const d = document.createElement("div"); d.className = "b";
+      const side = s.def.factions[s.data.game.sideIndex].short;
+      const phase = s.def.phases[s.data.game.phaseIndex] === "move" ? "Movement" : "Combat";
+      d.textContent = `Turn ${s.data.game.turn} of ${s.def.maxTurns} · ${side} · ${phase}`;
+      b.appendChild(t); b.appendChild(d);
+      b.onclick = () => { hide("startOv"); startGame(s.def, s.data); };
+      list.appendChild(b);
+    }
     for (const def of (global.HEX_SCENARIOS || [])) {
       const b = document.createElement("button");
       b.className = "scenBtn";
@@ -475,19 +526,37 @@
   }
 
   // ------------------------------- lifecycle -------------------------------
-  function startGame(def) {
+  let resumedCamera = false; // suppress the first focusActive() after a resume
+
+  function startGame(def, saved) {
     DEF = def;
     document.body.classList.remove("nogame"); // the board needs its real size
-    game = new Game(DEF);
+    if (saved) {
+      try { game = Game.restore(DEF, saved.game); }
+      catch (e) { clearSave(); saved = null; game = new Game(DEF); }
+    } else {
+      game = new Game(DEF);
+    }
     selected = null; reachable = new Map(); inspected = null; pending = null;
     pointers.clear(); drag = null; pinch = null; zoomBeforeFit = null;
+    resumedCamera = false;
     renderInspector();
     populateHelp();
 
     renderer = makeRenderer();
     renderer.setBoard([...game.board.values()]);
     renderer.resize(boardWrap);
-    renderer.frameDefault();
+    const c = saved && saved.camera;
+    if (c && Number.isFinite(c.zoom) && c.cam &&
+        Number.isFinite(c.cam.x) && Number.isFinite(c.cam.y)) {
+      // cam first, then setZoom: setZoom clamps the zoom and re-clamps cam for
+      // the CURRENT viewport, so a phone save opens sanely on a tablet.
+      renderer.cam = { x: c.cam.x, y: c.cam.y };
+      renderer.setZoom(c.zoom);
+      resumedCamera = true;
+    } else {
+      renderer.frameDefault();
+    }
 
     game.events.on("sideChange", () => { selected = null; showPass(); });
     game.events.on("phase", () => {
@@ -501,15 +570,29 @@
       $("winSub").textContent = reason;
       show("winOv");
     });
+    // Autosave. "phase" also covers side changes (every sideChange is followed
+    // by a phase emit); "gameover" frees the slot — a finished game is done.
+    game.events.on("move", save);
+    game.events.on("undo", save);
+    game.events.on("combat", save);
+    game.events.on("phase", save);
+    game.events.on("gameover", clearSave);
+
     hide("cbOv"); hide("winOv");
-    focusActive();
+    if (!resumedCamera) focusActive();
     draw(); syncHud(); syncFit(); showPass();
     global.__game = game; global.__renderer = renderer; // for smoke-testing
+    save(); // starting (or resuming) a game claims the one slot immediately
   }
 
   if (global.ResizeObserver) new global.ResizeObserver(relayout).observe(boardWrap);
   global.addEventListener("resize", relayout);
   global.addEventListener("orientationchange", relayout);
+  // Catch camera-only changes (panning saves nothing per frame): persist when
+  // the app goes to the background — the pair of events that actually fires on
+  // iOS home-screen web apps, where beforeunload does not.
+  global.addEventListener("pagehide", save);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
 
   syncHud();
   showStart();
