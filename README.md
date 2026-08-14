@@ -1,12 +1,17 @@
-# Hex Wargame Engine
+# Hex Wargame Engine — Napoleon at War
 
-A tiny, **reusable hex-and-counter wargame engine** in the tradition of old SPI
-games like *Napoleon at Waterloo*, plus two playable scenarios built on it
-(hot-seat, two players, mobile browser):
+A tiny, **reusable hex-and-counter wargame engine** that now implements the
+**Napoleon at War** system — the classic SPI ruleset published on the
+[HexWar wiki](https://www.hexwar.com/wiki/games/napoleon-at-war/common/common-rules.html) —
+as a shared body of *common rules*, with each battle adding its own
+*exclusive rules*, exactly like the printed series. Three playable scenarios
+ship on it (hot-seat, two players, mobile browser):
 
+- **Napoleon at Waterloo** — 22×16, June 18, 1815. Break Wellington's army
+  before nightfall; from Turn 3 the Prussians pour in from the east.
 - **Ridge Assault** — 9×11, a short fight for one town; fits on a phone screen.
-- **Sambre Crossing** — 24×18, an army-sized battle across a river. The map is
-  far bigger than any phone, so you **drag to scroll and pinch to zoom**.
+- **Sambre Crossing** — 24×18, an army-sized battle across a river. Drag to
+  scroll and pinch to zoom.
 
 You pick one on the start screen.
 
@@ -37,29 +42,78 @@ this repo's root, with no other infrastructure.
 
 ---
 
-## How to play
+## The Napoleon at War common rules
 
-Both scenarios share the same rules; only the map, the armies and the goal differ.
+Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m,
+1 Strength Point ≈ 500–1,000 men, 1 game-turn ≈ 1–2 hours):
 
-- Each turn a side plays **Movement**, then **Combat**, then passes the device.
-- **Move:** tap your unit → tap a highlighted (green) hex. Entering the six hexes
-  around an enemy unit (its *Zone of Control*) stops your unit.
-- **Combat:** in the Combat phase, tap an enemy adjacent to your units —
-  **Artillery can also fire from 2 hexes away**. Every one of your in-range,
-  unused units joins the attack. Odds + a die roll on the Combat Results Table
-  decide the outcome. Units firing from range bombard: they never suffer
-  attacker losses or retreats, only adjacent attackers do.
-- Counters read **letter + `CS·MA`** — combat strength and movement allowance.
-  Artillery adds a third number, its **range**.
-- **Tap a hex** to inspect its terrain, and **Undo** takes back your last move.
+- **Sequence of play.** Alternating player-turns, each a **Movement Phase**
+  then a **Combat Phase**. (Night game-turns, where a scenario has them, skip
+  the Combat Phase.)
+- **Movement & Zones of Control.** Terrain costs movement points; entering
+  the six hexes around an enemy unit (its ZOC) stops a unit dead — and a unit
+  that **starts** its Movement Phase in an enemy ZOC is locked in place. The
+  only ways out are winning, retreating, or dying.
+- **Combat is compulsory.** Every enemy unit adjacent to your units must be
+  attacked, and every one of your units adjacent to an enemy must attack —
+  each unit once per phase, each defender attacked once. You choose the
+  groupings: tap enemies to build a battle (a unit touching two enemies
+  attacks both at once as a combined defense), then pick which of your units
+  join. The phase will not end while a fightable mandatory battle waits.
+- **The CRT.** Total attacking CS against total defending CS × terrain,
+  rounded down to a column (1-3 … 5-1); one die. Results: **Ae** (all engaged
+  attackers eliminated), **Ar** (engaged attackers retreat), **Ex** (defender
+  eliminated, attacker loses at least as many strength points from engaged
+  units), **Dr** (defender retreats), **De** (defender eliminated). Worse than
+  1-3 is an automatic Ae; better than 5-1 an automatic De. There is no
+  "no effect" — every battle bites.
+- **Retreats are one hex,** and strict: a unit that would retreat into an
+  enemy ZOC, an occupied hex or impassable terrain is eliminated instead.
+- **Advance after combat.** When a hex is vacated by combat, one victorious
+  engaged unit may immediately advance into it, ignoring ZOCs.
+- **Artillery** may bombard up to **two hexes** away. Bombardment is
+  voluntary, and guns firing from range are never touched by the result —
+  only adjacent attackers pay.
+- **Demoralization.** Scenarios can give each army a Demoralization Level;
+  when its cumulative eliminated strength points reach it, the army breaks and
+  the game ends at that instant (the HUD tracks it live).
+- **Reinforcements** arrive on schedule at their map edge, pay 1 MP for the
+  entry hex, and fight the same turn.
+
+### Exclusive rules — Napoleon at Waterloo
+
+- Prussian columns (Bülow, then Zieten) enter on non-woods hexes of the
+  easternmost column from Game-Turn 3.
+- French demoralization at 40 SP, Anglo-Allied at 26. Breaking the Prussians
+  (12 SP) doesn't end the game — it *raises the French level by 10*.
+  Prussian losses never count against the Anglo-Allied army.
+- The French also win at the instant they hold the Mont-Saint-Jean
+  crossroads (★). At nightfall (end of Turn 10), the Allies have held.
+
+The other two scenarios keep their own exclusive content — steeper hills and
+stouter towns (defense ×3), and their objective-based victory conditions.
+
+## How to play (the app)
+
+- **Move:** tap your unit → tap a highlighted (green) hex. Locked and moved
+  units are dimmed; **Undo** takes back your last move.
+- **Fight:** tap enemies to group a battle (mandatory targets glow bright
+  red, your obligated units amber), press **Attack**, toggle the attacker
+  chips if you want to hold units back, and roll. Answer the advance prompt
+  when you clear a hex.
+- Counters read **letter + `CS·MA`** — combat strength and movement
+  allowance. Artillery adds a third number, its **range**. Prussian counters
+  are slate-dark so the Allied player can tell their armies apart.
+- **Tap a hex** to inspect its terrain; the HUD's small pill tracks each
+  army's losses against its demoralization level.
 
 ### Save & resume
 
 The game autosaves after every action to the browser's localStorage — one slot.
 Close the tab (or the home-screen app) mid-battle and the start screen offers
-**Continue** with the turn, side and phase you left; starting a new battle
-abandons it. Saves never leave the device, and in private browsing the game
-simply runs without persistence.
+**Continue** with the turn, side and phase you left (even mid-advance);
+starting a new battle abandons it. Saves never leave the device, and in
+private browsing the game simply runs without persistence.
 
 ### Getting around a big map
 
@@ -72,45 +126,13 @@ The board can be larger than the screen. A camera handles that:
 | **Fit** button, top right | frame the whole battlefield; tap again to go back |
 
 A tap only counts if you barely moved, so scrolling can never nudge a unit. The
-map can't be dragged off into nothing, and the camera follows the action —
-selecting, attacking, undoing and being handed the device all bring the relevant
-hexes on screen. On a board that already fits (Ridge Assault on a phone) nothing
-changes, and the **Fit** button stays out of the way.
-
-### The scenarios
-
-**Ridge Assault** — you are the **French (blue)** and move first. Capture the
-**Town** (gold ★) by the end of **Turn 6**. The **Allies (red)** win by holding it.
-
-**Sambre Crossing** — the French must take **three towns** beyond the river by
-the end of **Turn 10**; taking all three ends it at once, and at nightfall the
-side holding more towns wins (a tie favours the Allies). The **river is
-impassable** and has only **three fords**, so the game is about which crossing
-you commit to — and 11 units a side means the flanks are a long march away.
-
-| Unit | CS | MA | Range |
-|------|----|----|-------|
-| **I**nfantry | 4 | 4 | 1 |
-| **C**avalry | 3 | 8 | 1 |
-| **A**rtillery | 5 | 3 | 2 |
-| **G**uard | 6 | 4 | 1 |
-
-| Terrain | Move cost | Defender ×  | Where |
-|---------|-----------|-------------|-------|
-| Clear | 1 | ×1 | both |
-| Woods | 2 | ×2 | both |
-| Hill  | 2 | ×3 | both |
-| Town  | 1 | ×3 | both |
-| Marsh | 3 | ×1 | Sambre Crossing |
-| Ford  | 2 | ×1 | Sambre Crossing — the only way over the river |
-| River | — | — | Sambre Crossing — impassable |
+map can't be dragged off into nothing, and the camera follows the action.
 
 ---
 
-## Project layout — the engine vs. the game
+## Project layout — the engine, the common rules, the games
 
-The point of the split: **the engine knows nothing about Napoleon.** A new hex
-game is mostly a new data file.
+Three layers, each thinner than the last:
 
 ```
 index.html                 markup + styles; loads the scripts below
@@ -118,45 +140,45 @@ src/
   hex.js                   hex geometry: coords, neighbors, distance,
                            pixel<->hex layout, weighted pathfinding (Dijkstra)
   engine.js                the wargame engine: board, units, turns/phases,
-                           Zones of Control, movement, odds-based combat + CRT,
-                           victory checks. DOM-free, headless-testable.
-  renderer.js              Canvas renderer + CAMERA: draws the board (crisp on
-                           retina, culled to the viewport), owns pan/zoom, and
-                           picks hexes from taps
+                           ZOC (incl. locking), movement, odds-based combat,
+                           mandatory-combat bookkeeping, advance after combat,
+                           reinforcements, per-army loss tracking, save/restore.
+                           Everything opt-in via GameDef flags; DOM-free.
+  renderer.js              Canvas renderer + camera: drawing, pan/zoom, picking
 games/
-  ridge-assault.js         A GAME as data: unit types, terrain, map, setup,
-  sambre-crossing.js       CRT (uses engine default), and the victory goal.
-                           Each file registers itself in `HEX_SCENARIOS`.
-app.js                     glue for this app: gestures, HUD, overlays, combat
-                           dialog, scenario picker
+  napoleon-at-war-common.js  the SERIES: the NAW CRT, terrain chart, combat
+                           results, demoralization helpers, buildScenario().
+                           Not a scenario — a ruleset library.
+  napoleon-at-waterloo.js  a GAME: map, order of battle, Prussian schedule,
+  ridge-assault.js         demoralization levels, victory — the exclusive
+  sambre-crossing.js       rules. Each registers itself in `HEX_SCENARIOS`.
+app.js                     glue for this app: gestures, HUD, overlays, the
+                           battle dialog (attacker chips, advance prompt)
 test/
-  engine.test.js           headless rules tests (pure Node, no dependencies)
-  camera.test.js           headless camera + scenario-integrity tests
+  engine.test.js           core rules: movement, ZOC, combat, victory
+  naw.test.js              the NAW layer: locking, mandatory combat, CRT
+                           bands, strict retreats, advances, demoralization,
+                           reinforcements, save/restore of it all
+  camera.test.js           camera math + scenario-integrity checks
+  persist.test.js          save/resume round trips and rejection of bad saves
 ```
 
-### The camera
-
-`Layout.center()` is affine in `size` and `origin`, so the camera needs no canvas
-transform: **zoom scales `size`, pan translates `origin`**, and drawing and
-hit-testing stay in one coordinate system. The renderer keeps `zoom` (1 = the
-whole board fits) and `cam`, the world point at the centre of the viewport.
-Panning is clamped per axis — an axis the board doesn't fill stays centred, one
-it overflows can't be dragged past its edge.
-
 ### Make your own scenario
-Copy `games/ridge-assault.js` and edit the data: `unitTypes`, `terrain`, the
-ASCII `map`, `setup`, `maxTurns`, the `victory()` goal, and the `title`/`blurb`/
-`brief` the picker and help overlay display. Any unit type may set `range`
-(attack reach in hexes, default 1) to fire without being adjacent. Add a `<script>` tag in
-`index.html`, and keep the last line pushing the def onto `global.HEX_SCENARIOS`
-— that's what puts it on the start screen. Any rule (movement cost, ZOC, the
-whole CRT, odds mapping, die roll) can be overridden with a `rules: { ... }`
-block; otherwise the engine's defaults apply.
 
-Maps may be any size — the camera handles the rest — and may be ragged (a space
-means "no hex here"). Terrain with `passable: false` is a wall, which is how
-Sambre Crossing's river works. The engine is the reusable core; scenarios are
-thin data plus a few callbacks.
+Copy `games/ridge-assault.js` and edit the data inside
+`NAW_COMMON.buildScenario({...})`: `unitTypes` (via `NAW.unit(name, glyph,
+CS, MA, {range, army, color})`), extra `terrain`, the ASCII `map`, `setup`,
+`maxTurns`, `victory()`, and optionally `reinforcements`, `demoralization`
+and `nightTurns` — that's a battle's exclusive rules. Add a `<script>` tag in
+`index.html` and keep the last line pushing the def onto `HEX_SCENARIOS`.
+Any common rule can still be overridden per scenario through `rules:{}`
+(flags and function hooks) or a custom `crt`; a scenario that sets
+`lockedZOC/mandatoryCombat/advanceAfterCombat` to `false` falls back to the
+engine's permissive defaults.
+
+Maps may be any size — the camera handles the rest — and may be ragged (a
+space means "no hex here"). Terrain with `passable: false` is a wall, which is
+how the rivers work.
 
 ---
 
@@ -166,13 +188,29 @@ thin data plus a few callbacks.
 npm test          # pure Node, no install needed
 ```
 
-- `engine.test.js` — the rules: movement, ZOC, combat/CRT, both victory conditions.
-- `camera.test.js` — the camera, against stub canvas/container objects: pan
-  clamping, zoom about a focal point, `pixelToHex` round-trips, and that `fit()`
-  still frames a board exactly as it always did. It also checks the scenarios
-  themselves — map dimensions, every unit and objective on a real passable hex,
-  and both armies able to walk to every objective, which is what catches a typo
-  in the river.
+267 headless assertions across the four suites above, plus an optional
+browser smoke test (Playwright) that drives a real battle — mandatory combat,
+the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 
-The UI is verified separately by loading `index.html` in a headless browser;
-that check is optional and not required to run or hack on the game.
+---
+
+## Fidelity notes
+
+The mechanics above follow the HexWar wiki's Standard Rules and the Waterloo
+Exclusive Rules. A few data values could not be checked against the wiki from
+the environment this was built in (the site was unreachable) and are careful
+**reconstructions** of the SPI system — all plain data, one place each, easy
+to true up against the published charts:
+
+- the individual **CRT cell values** (`games/napoleon-at-war-common.js`) —
+  correct in shape (columns, result mix, monotone in odds and die), not
+  guaranteed cell-for-cell;
+- the common **terrain chart** numbers (same file);
+- the Waterloo **order of battle** and **demoralization levels**
+  (`games/napoleon-at-waterloo.js`), sized to the series' scale.
+
+Documented simplifications of the printed rules: the retreat hex and the
+Exchange losses are auto-picked (farthest-from-enemy / weakest-first) rather
+than chosen by the owning player; one advance per combat when several hexes
+are vacated; the defender's advance after an Ae/Ar is not offered yet; and
+reinforcements auto-place on the first free entry hex instead of asking.

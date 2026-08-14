@@ -12,7 +12,7 @@ const root = path.join(__dirname, "..");
 const ctx = { Math, JSON, console };
 ctx.window = undefined;                // force the "globalThis" branch
 vm.createContext(ctx);
-for (const f of ["src/hex.js", "src/engine.js",
+for (const f of ["src/hex.js", "src/engine.js", "games/napoleon-at-war-common.js",
                  "games/ridge-assault.js", "games/sambre-crossing.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: f });
 }
@@ -73,6 +73,11 @@ const roundtrip = (g) => JSON.parse(JSON.stringify(g.serialize()));
   ok(g.phase === "combat", "setup: in combat phase");
   const def = g.enemiesOf("fr")[0];
   const atk = [g.units.find((x) => x.faction === "fr")];
+  { // explicit attacker lists are range-validated — stand it next to the defender
+    const nb = Hex.neighbors(def).find((n) => g.hex(n.q, n.r) &&
+      g.terrain[g.hex(n.q, n.r).terrain].passable !== false && !g.unitAt(n.q, n.r));
+    Object.assign(atk[0], nb);
+  }
   const res = g.resolveCombat(def, atk);
   ok(res.ok, "setup: combat resolved");
 
@@ -86,7 +91,7 @@ const roundtrip = (g) => JSON.parse(JSON.stringify(g.serialize()));
   r.rng = () => 0.99;
   const d2 = r.enemiesOf("fr").find((e) => r.attackersFor(e).length > 0);
   if (d2) ok(r.resolveCombat(d2).ok, "restored game resolves further combat");
-  else ok(r.endPhase() === undefined, "restored game advances phase");
+  else ok(r.endPhase().ok === true, "restored game advances phase");
 }
 
 /* --- serialize leaks no live references --------------------------------- */
