@@ -91,9 +91,10 @@
           ctx.font = `bold ${s * 0.95}px Georgia, serif`;
           ctx.fillText(t.glyph, c.x, c.y - (stats ? s * 0.16 : 0));
           if (stats) {
-            ctx.font = `${s * 0.5}px sans-serif`;
+            const ranged = (t.range || 1) > 1;
+            ctx.font = `${s * (ranged ? 0.45 : 0.5)}px sans-serif`;
             ctx.fillStyle = "rgba(255,255,255,.92)";
-            ctx.fillText(`${t.combat}·${t.move}`, c.x, c.y + s * 0.62);
+            ctx.fillText(`${t.combat}·${t.move}${ranged ? `·${t.range}` : ""}`, c.x, c.y + s * 0.62);
           }
         }
         if (g.phase === "combat" && u.faction === g.activeFaction && u.acted) {
@@ -343,6 +344,7 @@
       if (game.phase === "move" && u.faction === game.activeFaction && u.moved) tag = " (moved)";
       else if (game.phase === "combat" && u.faction === game.activeFaction && u.acted) tag = " (attacked)";
       unitEl.innerHTML = `${fac.name} ${ut.name} · CS ${ut.combat} · MA ${ut.move}` +
+        ((ut.range || 1) > 1 ? ` · Range ${ut.range}` : "") +
         (tag ? `<span class="tag">${tag}</span>` : "");
       unitEl.hidden = false;
     } else unitEl.hidden = true;
@@ -359,7 +361,10 @@
     const col = game.oddsColumn(atk, def);
     const t = game.terrainAt(defender.q, defender.r);
     pending = { defender, attackers };
-    $("cbAtk").textContent = `${atk}  (${attackers.length} unit${attackers.length > 1 ? "s" : ""})`;
+    const bomb = attackers.filter((a) => global.Hex.distance(a, defender) >= 2).length;
+    $("cbAtk").textContent = `${atk}  (${attackers.length} unit${attackers.length > 1 ? "s" : ""}` +
+      `${bomb ? `, ${bomb} bombarding` : ""})`;
+    $("cbBomb").hidden = bomb === 0;
     $("cbDef").textContent = `${factionById(defender.faction).name} ${game.typeOf(defender).name} — CS ${game.combat(defender)}`;
     $("cbTer").textContent = `${t.name} (×${t.defMult}) → def ${def}`;
     $("odds").textContent = col;

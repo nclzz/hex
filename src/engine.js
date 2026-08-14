@@ -22,7 +22,7 @@
      {
        orientation, offsetMode,               // geometry
        terrain:   { code: {name,color,moveCost,defMult,passable?} },
-       unitTypes: { key:  {name,glyph,combat,move, ...custom} },
+       unitTypes: { key:  {name,glyph,combat,move,range?, ...custom} },  // range defaults to 1
        factions:  [{ id,name,short,color,dark }],
        map:       ["...rows of terrain codes..."],
        objectives:[{col,row,owner}] (optional, for victory helpers),
@@ -110,6 +110,7 @@
 
     combat(u) { return this.typeOf(u).combat; }
     move(u) { return this.typeOf(u).move; }
+    range(u) { return this.typeOf(u).range || 1; }
 
     /* ------------------------------- rules ------------------------------- */
     // Default rule implementations; a GameDef may override any via def.rules.
@@ -187,10 +188,11 @@
     }
 
     /* ------------------------------ combat ------------------------------- */
-    // All active-faction units adjacent to `defender` that haven't acted this phase.
+    // All active-faction units within attack range of `defender` (1 unless the
+    // unit type sets `range`) that haven't acted this phase.
     attackersFor(defender) {
       return this.units.filter((u) => u.alive && u.faction === this.activeFaction &&
-        !u.acted && Hex.distance(u, defender) === 1);
+        !u.acted && Hex.distance(u, defender) <= this.range(u));
     }
 
     attackerStrength(list) {
@@ -251,7 +253,10 @@
     applyResult(code, defender, attackers) {
       const custom = (this.def.rules || {}).applyResult;
       if (custom) return custom(this, code, defender, attackers);
-      const threat = attackers[0];
+      // Attackers adjacent to the defender are engaged in melee; the rest are
+      // bombarding from range and never suffer adverse attacker results.
+      const engaged = attackers.filter((a) => Hex.distance(a, defender) === 1);
+      const threat = engaged[0] || attackers[0];
       const kill = (u) => { u.alive = false; };
       let note = "";
       switch (code) {
@@ -262,15 +267,20 @@
         case "Ex": {
           kill(defender);
           let need = this.combat(defender);
-          for (const a of attackers.slice().sort((x, y) => this.combat(x) - this.combat(y))) {
+          for (const a of engaged.slice().sort((x, y) => this.combat(x) - this.combat(y))) {
             if (need <= 0) break; kill(a); need -= this.combat(a);
           }
           note = "Exchange — losses on both sides"; break;
         }
-        case "Ar": attackers.forEach((a) => this.retreat(a, defender, 1, false)); note = "Attackers pushed back"; break;
+        case "Ar":
+          engaged.forEach((a) => this.retreat(a, defender, 1, false));
+          note = engaged.length ? "Attackers pushed back" : "Bombardment driven off — guns unharmed";
+          break;
         case "Ae": {
-          const weak = attackers.slice().sort((x, y) => this.combat(x) - this.combat(y))[0];
-          if (weak) kill(weak); note = "Attacker repulsed with losses"; break;
+          const weak = engaged.slice().sort((x, y) => this.combat(x) - this.combat(y))[0];
+          if (weak) { kill(weak); note = "Attacker repulsed with losses"; }
+          else note = "Bombardment repulsed — no losses at range";
+          break;
         }
         case "NE": note = "No effect"; break;
       }
