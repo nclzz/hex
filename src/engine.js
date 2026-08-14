@@ -346,6 +346,74 @@
         units: this.units.map(clone),
       };
     }
+
+    /* --------------------------- save / resume --------------------------- */
+    // The full mutable state as a JSON-safe object. Board and objectives are
+    // derived from the def and not included; moveLog entries hold live unit
+    // references, so they are stored by unit id and remapped in restore().
+    serialize() {
+      return {
+        turn: this.turn, sideIndex: this.sideIndex, phaseIndex: this.phaseIndex,
+        over: this.over, winner: this.winner,
+        units: this.units.map((u) => ({
+          id: u.id, faction: u.faction, type: u.type,
+          q: u.q, r: u.r, alive: u.alive, moved: u.moved, acted: u.acted,
+        })),
+        moveLog: this.moveLog.map((m) => ({
+          unitId: m.unit.id, fromQ: m.fromQ, fromR: m.fromR,
+        })),
+      };
+    }
+
+    // Rebuild a Game from serialize() output. Throws on anything that does not
+    // match the def — a save from an edited scenario is discarded, not played.
+    static restore(def, data) {
+      const bad = (why) => { throw new Error("bad save: " + why); };
+      if (!data || typeof data !== "object") bad("not an object");
+
+      // The constructor's _enterPhase() emits into an emitter that has no
+      // listeners yet, so it is unobservable; everything it touches is
+      // overwritten below. Reusing it keeps board/unit setup in one place.
+      const g = new Game(def);
+
+      if (!Number.isInteger(data.turn) || data.turn < 1 || data.turn > g.maxTurns) bad("turn");
+      if (!Number.isInteger(data.sideIndex) || data.sideIndex < 0 || data.sideIndex >= g.factions.length) bad("sideIndex");
+      if (!Number.isInteger(data.phaseIndex) || data.phaseIndex < 0 || data.phaseIndex >= g.phases.length) bad("phaseIndex");
+      if (!Array.isArray(data.units) || data.units.length !== g.units.length) bad("unit count");
+
+      // Unit ids are assigned in def.setup order, so g.units[id] is the same
+      // soldier the save knew — as long as faction and type still agree.
+      const seen = new Set();
+      for (const su of data.units) {
+        const u = g.units[su.id];
+        if (!u || u.id !== su.id || seen.has(su.id)) bad("unit id " + su.id);
+        seen.add(su.id);
+        if (u.faction !== su.faction || u.type !== su.type) bad("unit identity " + su.id);
+        if (su.alive && !g.hex(su.q, su.r)) bad("unit off board " + su.id);
+      }
+      if (!Array.isArray(data.moveLog)) bad("moveLog");
+      for (const m of data.moveLog) {
+        if (!g.units[m.unitId]) bad("moveLog unit " + m.unitId);
+      }
+
+      for (const su of data.units) {
+        const u = g.units[su.id];
+        u.q = su.q; u.r = su.r;
+        u.alive = !!su.alive; u.moved = !!su.moved; u.acted = !!su.acted;
+      }
+      g.turn = data.turn;
+      g.sideIndex = data.sideIndex;
+      g.phaseIndex = data.phaseIndex;
+      g.over = !!data.over;
+      g.winner = data.winner != null ? data.winner : null;
+      // Remap the undo log back to live references. Do NOT run _enterPhase():
+      // it would clear this log, reset the active side's mid-phase flags and
+      // emit a phantom "phase" event.
+      g.moveLog = data.moveLog.map((m) => ({
+        unit: g.units[m.unitId], fromQ: m.fromQ, fromR: m.fromR,
+      }));
+      return g;
+    }
   }
 
   // A generic victory helper games can reuse: eliminate the enemy, or (on timeout)
