@@ -129,12 +129,19 @@
   .scenBtn.cont .b{opacity:.92;}
   .scenBtn .t{font-size:16px; font-weight:800;}
   .scenBtn .b{font-size:12.5px; opacity:.78; margin-top:3px; line-height:1.35;}
-  #helpOv{background:rgba(18,16,12,.92);}
-  #helpCard{color:#fff; text-align:left; max-width:340px; font-size:13px; line-height:1.5;}
-  #helpCard h3{margin:0 0 8px; text-align:center;}
+  /* Fixed so it covers the HUD and bottom bar too; scrolls on its own when the
+     card is taller than the viewport. */
+  #helpOv{background:rgba(18,16,12,.92); position:fixed; z-index:30;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:calc(22px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom));}
+  /* margin:auto (not flex centering) keeps the card's top reachable on overflow */
+  #helpCard{color:#fff; text-align:left; max-width:340px; font-size:13px; line-height:1.5; margin:auto;}
+  #helpCard h3{margin:0 0 8px; text-align:center; padding-right:30px;}
   #helpCard .k{display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:-2px; margin-right:4px;}
-  #helpCard button{display:block; margin:16px auto 0; background:#fff; color:var(--ink);
-    font-weight:800; padding:9px 20px; border-radius:9px; border:none;}
+  #helpClose{position:fixed; top:calc(10px + env(safe-area-inset-top));
+    right:calc(10px + env(safe-area-inset-right)); width:36px; height:36px; border-radius:50%;
+    background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.35); color:#fff;
+    font-size:20px; font-weight:800; line-height:1;}
 </style>
 </head>
 <body>
@@ -213,6 +220,7 @@
 
     <!-- Help overlay -->
     <div id="helpOv" class="overlay">
+      <button id="helpClose" aria-label="Close">&times;</button>
       <div id="helpCard">
         <h3 id="helpTitle">How to play</h3>
         <p><b>Goal.</b> <span id="helpBrief"></span></p>
@@ -227,7 +235,6 @@
         <p><b>Counters</b> show a letter (I/C/A/G) and <b>CS·MA</b> — combat strength &amp;
         movement. Artillery adds a third number — its range.</p>
         <p id="helpTerrain"></p>
-        <button id="helpClose">Got it</button>
       </div>
     </div>
   </div>
