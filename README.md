@@ -90,8 +90,8 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
 - The French also win at the instant they hold the Mont-Saint-Jean
   crossroads (★). At nightfall (end of Turn 10), the Allies have held.
 
-The other two scenarios keep their own exclusive content — steeper hills and
-stouter towns (defense ×3), and their objective-based victory conditions.
+The other two scenarios keep their own exclusive content — maps, armies and
+their objective-based victory conditions — on the same standard terrain chart.
 
 ## How to play (the app)
 
@@ -145,7 +145,7 @@ src/
                            ZOC (incl. locking), movement, odds-based combat,
                            mandatory-combat bookkeeping, advance after combat,
                            reinforcements, per-army loss tracking, save/restore.
-                           Everything opt-in via GameDef flags; DOM-free.
+                           The NAW common rules ARE the engine; DOM-free.
   renderer.js              Canvas renderer + camera: drawing, pan/zoom, picking
 games/
   napoleon-at-war-common.js  the SERIES: the NAW CRT, terrain chart, combat
@@ -173,10 +173,11 @@ CS, MA, {range, army, color})`), extra `terrain`, the ASCII `map`, `setup`,
 `maxTurns`, `victory()`, and optionally `reinforcements`, `demoralization`
 and `nightTurns` — that's a battle's exclusive rules. Add a `<script>` tag in
 `index.html` and keep the last line pushing the def onto `HEX_SCENARIOS`.
-Any common rule can still be overridden per scenario through `rules:{}`
-(flags and function hooks) or a custom `crt`; a scenario that sets
-`lockedZOC/mandatoryCombat/advanceAfterCombat` to `false` falls back to the
-engine's permissive defaults.
+Any common rule can still be overridden per scenario through the `rules:{}`
+function hooks (`applyResult`, `oddsColumn`, `skipPhase`, …) or a custom
+`crt` — but there is no legacy fallback ruleset: sticky ZOC, mandatory
+combat, one-hex retreats and advances are the engine's only behavior, and a
+`crt` is required.
 
 Maps may be any size — the camera handles the rest — and may be ragged (a
 space means "no hex here"). Terrain with `passable: false` is a wall, which is

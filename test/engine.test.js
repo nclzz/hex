@@ -84,7 +84,7 @@ const before = g.living("al").length;
 g.rng = () => 0.99; // die = 6
 const res = g.resolveCombat(def, [atk1]);
 ok(res.ok, "combat resolves");
-ok(["Ae", "Ar", "Ex", "NE", "Dr", "De"].includes(res.code), "valid CRT code: " + res.code);
+ok(["Ae", "Ar", "Ex", "Dr", "De"].includes(res.code), "valid CRT code: " + res.code);
 
 /* --- odds column mapping --- */
 ok(g.oddsColumn(10, 2) === "5:1", "10:2 -> 5:1 column");
