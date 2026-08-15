@@ -147,6 +147,19 @@
       // The battle being grouped right now.
       for (const t of targets)
         hs.push({ hex: t, fill: "rgba(244,210,58,.3)", stroke: "#f4d23a", lineWidth: 3, scale: 0.93 });
+      // …and every friendly unit that will join it — the live chip selection
+      // once the dialog is open, everyone eligible before that. A dashed ring
+      // is a gun firing from range.
+      if (targets.length) {
+        const joining = pending
+          ? pending.eligible.filter((a) => pending.chosen.has(a.id))
+          : eligibleFor(targets);
+        for (const a of joining) {
+          const bombarding = targets.every((d) => Hx().distance(a, d) >= 2);
+          hs.push({ hex: a, stroke: "rgba(255,255,255,.95)", lineWidth: 3,
+                    scale: 0.88, dash: bombarding ? [5, 4] : null });
+        }
+      }
     }
     if (inspected) hs.push({ hex: inspected, stroke: "rgba(255,255,255,.85)", lineWidth: 2, scale: 0.9 });
     return hs;
@@ -438,6 +451,7 @@
         else pending.chosen.add(a.id);
         b.classList.toggle("off", !pending.chosen.has(a.id));
         refreshCombatCard();
+        draw(); // the board rings track the chips live behind the dialog
       };
       strip.appendChild(b);
     }
@@ -689,7 +703,10 @@
     if (!game) return;
     if (game.phase === "combat") {
       if (targets.length) {
-        el.innerHTML = `<b>Battle:</b> ${targets.length} defender${targets.length > 1 ? "s" : ""} picked. ` +
+        const joining = eligibleFor(targets);
+        const ranged = joining.filter((a) => targets.every((d) => Hx().distance(a, d) >= 2)).length;
+        el.innerHTML = `<b>Battle:</b> ${targets.length} defender${targets.length > 1 ? "s" : ""} · ` +
+          `${joining.length} unit${joining.length === 1 ? "" : "s"} join${ranged ? ` (${ranged} at range)` : ""}. ` +
           `<span class="muted">Add more, or press Attack.</span>`;
         return;
       }
