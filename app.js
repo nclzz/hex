@@ -527,6 +527,8 @@
     }
     const valid = battleValid(defenders, picked);
     $("odds").textContent = valid ? colLabel(game.oddsColumn(atk, def)) : "—";
+    $("dieBox").textContent = valid ? ""
+      : "Not legal: every defender needs an adjacent attacker in the battle.";
     $("resolveBtn").disabled = !valid;
   }
 
@@ -696,8 +698,13 @@
   function syncAttack() {
     const on = game && !game.over && game.phase === "combat" && targets.length > 0;
     attackBtn.classList.toggle("hidden", !on);
-    if (on) attackBtn.textContent =
-      targets.length === 1 ? "Attack" : `Attack (${targets.length})`;
+    if (on) {
+      // A combined battle is only legal if every defender has an adjacent
+      // attacker available — a gun at range bombards a single hex.
+      attackBtn.disabled = !battleValid(targets, eligibleFor(targets));
+      attackBtn.textContent =
+        targets.length === 1 ? "Attack" : `Attack (${targets.length})`;
+    }
   }
   undoBtn.onclick = () => {
     if (!game || game.over || anyOverlay()) return;
@@ -751,6 +758,12 @@
       if (targets.length) {
         const joining = eligibleFor(targets);
         const ranged = joining.filter((a) => targets.every((d) => Hx().distance(a, d) >= 2)).length;
+        if (!battleValid(targets, joining)) {
+          el.innerHTML = `<b>Battle:</b> not legal — every defender needs an ` +
+            `<b>adjacent</b> attacker. <span class="muted">A gun at range bombards ` +
+            `one hex at a time; drop a defender.</span>`;
+          return;
+        }
         el.innerHTML = `<b>Battle:</b> ${targets.length} defender${targets.length > 1 ? "s" : ""} · ` +
           `${joining.length} unit${joining.length === 1 ? "" : "s"} join${ranged ? ` (${ranged} at range)` : ""}. ` +
           `<span class="muted">Add more, or press Attack.</span>`;
