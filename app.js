@@ -714,7 +714,6 @@
   }
   function syncHud() {
     if (!game) {
-      $("turnPill").textContent = "—";
       $("sidePill").textContent = ""; $("sidePill").style.background = "transparent";
       $("phaseTxt").textContent = "Choose a scenario";
       $("demPill").hidden = true;
@@ -725,14 +724,18 @@
       return;
     }
     const fac = factionById(game.activeFaction);
-    $("turnPill").textContent = `Turn ${game.turn}/${DEF.maxTurns}`;
-    const sp = $("sidePill"); sp.textContent = fac.short; sp.style.background = fac.color;
+    // One pill says who is acting and where the clock stands: "ALLIES 2/10".
+    const sp = $("sidePill");
+    sp.innerHTML = `${fac.short} <span class="tn">${game.turn}/${DEF.maxTurns}</span>`;
+    sp.style.background = fac.color;
     $("phaseTxt").textContent = game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
     // Demoralization ticker: eliminated SP vs each army's breaking point.
     const dp = $("demPill");
-    if (DEF.demoralization && global.NAW_COMMON) {
+    const hasDem = !!(DEF.demoralization && global.NAW_COMMON);
+    document.body.classList.toggle("hasDem", hasDem);
+    if (hasDem) {
       dp.hidden = false;
       dp.textContent = global.NAW_COMMON.demoralizationStatus(game)
         .map((s) => `${s.short || s.name} ${s.lost}/${s.level}`).join(" · ");

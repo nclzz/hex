@@ -145,8 +145,8 @@
     demoralization: [
       { faction: "fr", name: "French Army", short: "FR",
         level: (g) => 40 + (g.lostSP("al", "pr") >= 12 ? 10 : 0) },
-      { faction: "al", army: "anglo", name: "Anglo-Allied Army", short: "ANGLO", level: 26 },
-      { faction: "al", army: "pr", name: "Prussian Army", short: "PRUSSIAN",
+      { faction: "al", army: "anglo", name: "Anglo-Allied Army", short: "ANG", level: 26 },
+      { faction: "al", army: "pr", name: "Prussian Army", short: "PRU",
         level: 12, endsGame: false },
     ],
 

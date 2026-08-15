@@ -23,13 +23,18 @@
   /* Top HUD */
   #hud{flex:0 0 auto; background:var(--panel); border-bottom:2px solid var(--line);
     padding:6px 8px; display:flex; align-items:center; gap:8px; font-size:13px;}
-  #turnPill{font-weight:700; padding:3px 8px; border-radius:10px; background:var(--panel-d);
-    border:1px solid var(--line); white-space:nowrap;}
+  /* One pill carries the acting side AND the turn count: "ALLIES 2/10". */
   #sidePill{font-weight:800; padding:3px 10px; border-radius:10px; color:#fff; white-space:nowrap;}
+  #sidePill .tn{opacity:.85;}
   #phaseTxt{font-weight:600; opacity:.85;}
   /* Demoralization ticker: eliminated Strength Points vs each army's level */
   #demPill{font-size:11px; font-weight:700; padding:3px 8px; border-radius:10px;
     background:var(--panel-d); border:1px solid var(--line); white-space:nowrap; opacity:.9;}
+  /* On narrow screens the ticker outranks the phase word — the action button
+     ("End Movement") and the status line already name the phase. */
+  @media (max-width: 480px) {
+    body.hasDem #phaseTxt{display:none;}
+  }
   #hud .spacer{flex:1;}
   #newBtn{font-size:12px; padding:5px 9px; border-radius:8px; border:1px solid var(--line);
     background:var(--panel-d); color:var(--ink); font-weight:600;}
@@ -171,8 +176,7 @@
 <body>
 <div id="app">
   <div id="hud">
-    <span id="turnPill">Turn 1/6</span>
-    <span id="sidePill">FRENCH</span>
+    <span id="sidePill">FRENCH 1/6</span>
     <span id="phaseTxt">Movement</span>
     <span id="demPill" hidden></span>
     <span class="spacer"></span>
