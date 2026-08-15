@@ -59,11 +59,11 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const d = tinyDef({});
   ok(d.naw === true, "buildScenario marks the def as a NAW game");
   ok(d.crt === NAW_COMMON.CRT, "buildScenario installs the common CRT");
-  ok(d.rules.lockedZOC && d.rules.mandatoryCombat && d.rules.advanceAfterCombat,
-     "buildScenario turns the common rule flags on");
-  ok(d.rules.applyResult === NAW_COMMON.applyResult, "buildScenario installs NAW results");
   ok(d.terrain["."] && d.terrain["w"] && d.terrain["~"],
      "the common terrain palette is merged in");
+  // The CRT is the one piece of data the engine cannot invent.
+  throws(() => new Game(Object.assign({}, d, { crt: null })),
+         "a GameDef without a crt is rejected at construction");
   const d2 = tinyDef({ terrain: { ".": { name: "Steppe", color: "#eee", moveCost: 1, defMult: 1 } } });
   ok(d2.terrain["."].name === "Steppe", "a scenario can override a common terrain");
   ok(d2.terrain["w"].name === "Woods", "…without losing the rest of the palette");
@@ -103,15 +103,6 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const dest = [...g.reachable(free).values()][0];
   ok(g.moveUnit(free, dest.q, dest.r).ok, "…and actually moves");
 }
-{
-  // Flag off: the same position moves fine.
-  const g = new Game(tinyDef({ rules: { lockedZOC: false }, setup: [
-    { faction: "fr", units: [[1, 1, "inf"]] },
-    { faction: "al", units: [[1, 0, "inf"]] },
-  ] }));
-  ok(g.canMove(g.living("fr")[0]), "lockedZOC off: adjacent unit may still move");
-}
-
 /* --- mandatory combat ---------------------------------------------------- */
 {
   const g = new Game(tinyDef({ setup: [
@@ -135,15 +126,6 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   ok(un2.mustAttack.length === 0 && un2.mustBeAttacked.length === 0,
      "obligations satisfied after the battle");
   ok(g.endPhase().ok, "endPhase proceeds once every mandatory battle is fought");
-}
-{
-  // Flag off: adjacency never blocks the phase.
-  const g = new Game(tinyDef({ rules: { mandatoryCombat: false }, setup: [
-    { faction: "fr", units: [[1, 1, "inf"]] },
-    { faction: "al", units: [[1, 0, "inf"]] },
-  ] }));
-  g.endPhase();
-  ok(g.endPhase().ok, "mandatoryCombat off: combat phase may be skipped");
 }
 {
   // Bombardment range creates no obligations, but bombarding satisfies none either.
@@ -176,7 +158,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const tgt = g.living("al")[0];
   ok(Hex.distance(big, tgt) === 1, "layout: both foot units engage");
   ok(Hex.distance(art, tgt) === 2, "layout: the gun is at bombardment range");
-  NAW_COMMON.applyResult(g, "Ae", [tgt], [inf, big, art]);
+  g.applyResult("Ae", [tgt], [inf, big, art]);
   ok(!inf.alive && !big.alive, "Ae kills every engaged attacker");
   ok(art.alive, "…but spares the bombarding gun");
   ok(tgt.alive, "…and the defender stands");
@@ -189,7 +171,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   ] }));
   const [inf, big] = g.living("fr");
   const tgt = g.living("al")[0];
-  NAW_COMMON.applyResult(g, "Ex", [tgt], [inf, big]);
+  g.applyResult("Ex", [tgt], [inf, big]);
   ok(!tgt.alive, "Ex kills the defender");
   ok(!inf.alive && big.alive, "Ex takes the cheapest engaged units up to the defender's CS");
 }
@@ -200,7 +182,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "al", units: [[3, 3, "inf"]] },
   ] }));
   const atk = g.living("fr")[0], tgt = g.living("al")[0];
-  NAW_COMMON.applyResult(g, "Dr", [tgt], [atk]);
+  g.applyResult("Dr", [tgt], [atk]);
   ok(tgt.alive && Hex.distance(tgt, atk) === 2, "Dr retreats the defender exactly one hex");
 }
 {
@@ -209,7 +191,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "al", units: [[0, 0, "inf"]] },
   ] }));
   const atk = g.living("fr")[0], tgt = g.living("al")[0];
-  NAW_COMMON.applyResult(g, "Dr", [tgt], [atk]);
+  g.applyResult("Dr", [tgt], [atk]);
   ok(!tgt.alive, "a defender with no ZOC-free retreat hex is eliminated");
 }
 {
@@ -219,7 +201,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "al", units: [[1, 0, "inf"]] },
   ] }));
   const atk = g.living("fr")[0], tgt = g.living("al")[0];
-  NAW_COMMON.applyResult(g, "Ar", [tgt], [atk]);
+  g.applyResult("Ar", [tgt], [atk]);
   ok(!atk.alive, "an attacker with no ZOC-free retreat hex is eliminated on Ar");
 }
 

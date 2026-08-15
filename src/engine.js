@@ -32,27 +32,31 @@
        demoralization: { armyOrFactionId: level },     // optional, read by victory()
        phases:    ["move","combat"],          // per-faction, in order
        maxTurns:  number,
-       crt:       { "columns":[...], table:{col:[6 results]} },   // optional override
-       rules:     {  (all optional — sensible defaults provided)
-         // function hooks:
+       crt:       { "columns":[...], table:{col:[6 results]} },   // REQUIRED
+       rules:     {  (all optional function hooks — NAW defaults provided)
          stepCost(game,unit,fromHex,toHex), canStandOn(game,unit,hex),
          isZOC(game,side,hex), attackerStrength(game,atkList),
          defenderStrength(game,def,hex), oddsColumn(game,atk,def),
          rollDie(game)->1..6, applyResult(game,code,defenders,atkList),
          skipPhase(game,phaseName)->bool,     // e.g. night turns skip "combat"
-         // boolean flags (names never collide with the hooks above):
-         lockedZOC,          // units starting Movement in an enemy ZOC may not move
-         mandatoryCombat,    // combat obligations + endPhase gating
-         advanceAfterCombat, // victor may advance into a vacated defender hex
        },
        victory(game) -> { winner, reason } | null,
      }
+
+     The engine's built-in behavior IS the Napoleon at War common ruleset:
+     sticky Zones of Control (a unit starting its Movement Phase in an enemy
+     ZOC may not move), mandatory combat with endPhase gating, one-hex strict
+     retreats, advance after combat, bombardment immunity at range. There is
+     no legacy fallback — scenarios shape behavior through the hooks above
+     and their own crt/terrain data.
   ------------------------------------------------------------------------ */
 
-  const RESULT_CODES = ["Ae", "Ar", "Ex", "NE", "Dr", "De"];
+  const RESULT_CODES = ["Ae", "Ar", "Ex", "Dr", "De"];
 
   class Game {
     constructor(def) {
+      if (!def.crt || !def.crt.columns || !def.crt.table)
+        throw new Error("GameDef needs a crt ({columns, table}) — see NAW_COMMON.CRT");
       this.def = def;
       this.orientation = def.orientation || "pointy";
       this.offsetMode = def.offsetMode || "odd-r";
@@ -156,8 +160,6 @@
       const r = this.def.rules || {};
       return r[name] ? r[name].bind(null) : fallback;
     }
-    // Boolean rule flags (kept disjoint from the function-hook names).
-    flag(name) { return !!((this.def.rules || {})[name]); }
 
     // Zone of Control: a hex is in `faction`'s enemies' ZOC if adjacent to an enemy unit.
     isEnemyZOC(faction, q, r) {
@@ -257,7 +259,7 @@
     oddsColumn(atk, def) {
       const custom = (this.def.rules || {}).oddsColumn;
       if (custom) return custom(this, atk, def);
-      const cols = (this.def.crt && this.def.crt.columns) || DEFAULT_CRT.columns;
+      const cols = this.def.crt.columns;
       const ratio = atk / def;
       // Map ratio to the nearest defined column, rounding down.
       // Columns are labelled "a:b"; compute numeric value and pick highest not exceeding ratio.
@@ -295,49 +297,56 @@
       return true;
     }
 
-    // Default result application. `defenders` may hold several units (they
-    // were attacked as one combined battle); results hit every one of them.
+    // Result application — the Napoleon at War semantics. `defenders` may
+    // hold several units (attacked as one combined battle); results hit
+    // every one of them. Retreats are ONE hex and strict: a unit whose only
+    // exits are enemy-ZOC, occupied or impassable hexes is eliminated —
+    // attackers included. Only ENGAGED (adjacent) attackers ever pay;
+    // bombarding units at range are immune to every result.
+    // Documented simplifications: the retreat hex and the Exchange losses
+    // are auto-picked (farthest-from-threat / weakest-first) instead of
+    // chosen by the owning player. Override via rules.applyResult.
     applyResult(code, defenders, attackers) {
       defenders = Array.isArray(defenders) ? defenders : [defenders];
       const custom = (this.def.rules || {}).applyResult;
       if (custom) return custom(this, code, defenders, attackers);
-      // Attackers adjacent to a defender are engaged in melee; the rest are
-      // bombarding from range and never suffer adverse attacker results.
       const engaged = attackers.filter((a) => defenders.some((d) => Hex.distance(a, d) === 1));
       const threat = engaged[0] || attackers[0];
       const kill = (u) => { u.alive = false; };
-      let note = "";
       switch (code) {
-        case "De": defenders.forEach(kill); note = "Defender destroyed"; break;
+        case "De":
+          defenders.forEach(kill);
+          return "Defender eliminated";
         case "Dr": {
           let trapped = false;
           for (const d of defenders) {
-            if (!this.retreat(d, threat, 2, true)) { kill(d); trapped = true; }
+            if (!this.retreat(d, threat, 1, true)) { kill(d); trapped = true; }
           }
-          note = trapped ? "Defender trapped — destroyed" : "Defender retreated";
-          break;
+          return trapped ? "No retreat possible — defender eliminated" : "Defender retreats";
         }
         case "Ex": {
           defenders.forEach(kill);
           let need = defenders.reduce((s, d) => s + this.combat(d), 0);
           for (const a of engaged.slice().sort((x, y) => this.combat(x) - this.combat(y))) {
-            if (need <= 0) break; kill(a); need -= this.combat(a);
+            if (need <= 0) break;
+            kill(a); need -= this.combat(a);
           }
-          note = "Exchange — losses on both sides"; break;
+          return "Exchange — losses on both sides";
         }
-        case "Ar":
-          engaged.forEach((a) => this.retreat(a, defenders[0], 1, false));
-          note = engaged.length ? "Attackers pushed back" : "Bombardment driven off — guns unharmed";
-          break;
-        case "Ae": {
-          const weak = engaged.slice().sort((x, y) => this.combat(x) - this.combat(y))[0];
-          if (weak) { kill(weak); note = "Attacker repulsed with losses"; }
-          else note = "Bombardment repulsed — no losses at range";
-          break;
+        case "Ar": {
+          if (!engaged.length) return "Bombardment driven off — guns unharmed";
+          let lost = false;
+          for (const a of engaged) {
+            if (!this.retreat(a, defenders[0], 1, true)) { kill(a); lost = true; }
+          }
+          return lost ? "Attackers repulsed — the trapped are lost" : "Attackers retreat";
         }
-        case "NE": note = "No effect"; break;
+        case "Ae":
+          if (!engaged.length) return "Bombardment repulsed — no losses at range";
+          engaged.forEach(kill);
+          return "Attack shattered — engaged attackers eliminated";
       }
-      return note;
+      return "";
     }
 
     // Resolve an attack on `defenders` (a unit or an array of units fought as
@@ -350,7 +359,7 @@
       for (const d of defenders) {
         if (!this.onMap(d) || d.faction === this.activeFaction)
           return { ok: false, reason: "invalid defender" };
-        if (this.flag("mandatoryCombat") && this.attackedIds.has(d.id))
+        if (this.attackedIds.has(d.id))
           return { ok: false, reason: "already attacked this phase" };
       }
       const explicit = !!attackers;
@@ -381,8 +390,7 @@
       const def = defenders.reduce((s, d) => s + this.defenderStrength(d), 0);
       const column = this.oddsColumn(atk, def);
       const die = this.rollDie();
-      const table = (this.def.crt && this.def.crt.table) || DEFAULT_CRT.table;
-      const code = table[column][die - 1];
+      const code = this.def.crt.table[column][die - 1];
       const defHexes = defenders.map((d) => ({ q: d.q, r: d.r }));
       const note = this.applyResult(code, defenders, attackers);
       attackers.forEach((a) => { if (a.alive) a.acted = true; });
@@ -390,7 +398,7 @@
       // Advance after combat: hexes the defenders no longer hold may be
       // claimed by ONE surviving engaged attacker, immediately.
       let advance = null;
-      if (this.flag("advanceAfterCombat")) {
+      {
         const hexes = defHexes.filter((h) => !this.unitAt(h.q, h.r));
         const unitIds = attackers
           .filter((a) => a.alive && hexes.some((h) => Hex.distance(a, h) === 1))
@@ -441,7 +449,6 @@
     _computeObligations() {
       this.mustAttackIds = new Set();
       this.mustBeAttackedIds = new Set();
-      if (!this.flag("mandatoryCombat")) return;
       const faction = this.activeFaction;
       for (const u of this.living(faction)) {
         for (const nb of Hex.neighbors(u)) {
@@ -459,8 +466,7 @@
     // phase can never deadlock; anything still fightable must be fought.
     unresolvedCombat() {
       const mustAttack = [], mustBeAttacked = [];
-      if (this.phase !== "combat" || !this.flag("mandatoryCombat"))
-        return { mustAttack, mustBeAttacked };
+      if (this.phase !== "combat") return { mustAttack, mustBeAttacked };
       const faction = this.activeFaction;
       for (const id of this.mustBeAttackedIds) {
         const d = this.units[id];
@@ -486,9 +492,10 @@
       if (this.phase === "move") {
         this.living(faction).forEach((u) => { u.moved = false; u.freshArrival = false; });
         this._placeReinforcements(faction);
-        const lock = this.flag("lockedZOC");
+        // Sticky ZOC: a unit starting its Movement Phase in an enemy Zone of
+        // Control may not move this phase.
         this.living(faction).forEach((u) => {
-          u.locked = lock && this.isEnemyZOC(faction, u.q, u.r);
+          u.locked = this.isEnemyZOC(faction, u.q, u.r);
         });
       }
       if (this.phase === "combat") {
@@ -526,7 +533,7 @@
     endPhase() {
       if (this.over) return { ok: false, reason: "game over" };
       if (this.pendingAdvance) return { ok: false, reason: "advance pending" };
-      if (this.phase === "combat" && this.flag("mandatoryCombat")) {
+      if (this.phase === "combat") {
         const un = this.unresolvedCombat();
         if (un.mustAttack.length || un.mustBeAttacked.length) {
           return { ok: false, reason: "mandatory battles remain", unresolved: un };
@@ -706,17 +713,5 @@
     return null;
   }
 
-  const DEFAULT_CRT = {
-    columns: ["1:2", "1:1", "2:1", "3:1", "4:1", "5:1"],
-    table: {
-      "1:2": ["Ae", "Ae", "Ar", "Ex", "NE", "Dr"],
-      "1:1": ["Ae", "Ar", "Ex", "NE", "Dr", "Dr"],
-      "2:1": ["Ar", "Ex", "NE", "Dr", "Dr", "De"],
-      "3:1": ["Ex", "NE", "Dr", "Dr", "De", "De"],
-      "4:1": ["NE", "Dr", "Dr", "De", "De", "De"],
-      "5:1": ["Dr", "Dr", "De", "De", "De", "De"],
-    },
-  };
-
-  global.HexWar = { Game, RESULT_CODES, DEFAULT_CRT, defaultVictory };
+  global.HexWar = { Game, RESULT_CODES, defaultVictory };
 })(typeof window !== "undefined" ? window : globalThis);

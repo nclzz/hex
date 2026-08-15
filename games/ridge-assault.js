@@ -30,12 +30,7 @@
       grd: NAW.unit("Guard",     "G", 6, 4),
     },
 
-    // Exclusive terrain flavour: this ridge is steeper and its town more
-    // defensible than the series standard (×3 rather than ×2).
-    terrain: {
-      "h": { name: "Hill", color: "#c9a36a", moveCost: 2, defMult: 3 },
-      "t": { name: "Town", color: "#b9b2a6", moveCost: 1, defMult: 3 },
-    },
+    // Terrain comes straight from the series' standard chart (NAW_COMMON).
 
     factions: [
       { id: "fr", name: "French", short: "FRENCH", color: "#2b5fa8", dark: "#1c3f70" },
