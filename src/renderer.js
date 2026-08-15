@@ -256,9 +256,9 @@
         if (h.stroke) { ctx.lineWidth = h.lineWidth || 2; ctx.strokeStyle = h.stroke; ctx.stroke(); }
       }
 
-      // units
+      // units (reinforcements that have not entered the map yet don't exist)
       for (const u of game.units) {
-        if (!u.alive) continue;
+        if (!u.alive || u.entered === false) continue;
         const c = L.center(u);
         if (!this._visible(c, size)) continue;
         this.drawUnit(ctx, game, u, c, size);

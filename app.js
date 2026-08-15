@@ -16,7 +16,8 @@
   // One autosave slot in localStorage. Every access is guarded: Safari private
   // mode throws on write, and some contexts throw on merely touching
   // localStorage — failure just means the game runs without persistence.
-  const SAVE_KEY = "hexwar.save.v1";
+  // v2: Napoleon at War state (mandatory combat, advances, reinforcements).
+  const SAVE_KEY = "hexwar.save.v2";
   const lsGet = (k) => { try { return global.localStorage.getItem(k); } catch (e) { return null; } };
   const lsSet = (k, v) => { try { global.localStorage.setItem(k, v); } catch (e) { /* no persistence */ } };
   const lsDel = (k) => { try { global.localStorage.removeItem(k); } catch (e) { /* no persistence */ } };
@@ -49,8 +50,14 @@
   let DEF = null;               // the scenario currently being played
   let game = null, renderer = null;
   let selected = null, reachable = new Map();
+  let targets = [];             // combat phase: enemy units grouped into the next battle
   let inspected = null; // hex {q,r} shown in the terrain inspector
   const factionById = (id) => DEF.factions.find((f) => f.id === id);
+  // Is this enemy unit still a legal target this phase?
+  function attackable(u) {
+    if (game.attackedIds && game.attackedIds.has(u.id)) return false;
+    return game.attackersFor(u).length > 0;
+  }
 
   // Below these hex sizes the counter glyphs would be smaller than they are
   // legible, so we drop detail instead of drawing unreadable text.
@@ -80,8 +87,9 @@
         const s = size * 0.66, t = g.typeOf(u), fac = factionById(u.faction);
         const rad = s * 0.9, x = c.x - rad, y = c.y - rad * 0.86, w = rad * 2, hh = rad * 1.72, br = Math.max(2, s * 0.18);
         roundRect(ctx, x, y, w, hh, br);
-        const dimmed = g.phase === "move" && u.faction === g.activeFaction && u.moved;
-        ctx.fillStyle = dimmed ? fac.dark : fac.color;
+        // A unit type may carry its own counter colour (e.g. Prussians within
+        // the Allied faction); the faction colour is the default.
+        ctx.fillStyle = t.color || fac.color;
         ctx.fill();
         ctx.lineWidth = size < LOD_GLYPH ? 1 : 1.5;
         ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.stroke();
@@ -97,7 +105,14 @@
             ctx.fillText(`${t.combat}·${t.move}${ranged ? `·${t.range}` : ""}`, c.x, c.y + s * 0.62);
           }
         }
-        if (g.phase === "combat" && u.faction === g.activeFaction && u.acted) {
+        // Spent units dim: moved (or ZOC-locked) in Movement, attacked in
+        // Combat, and enemies whose battle has already been fought.
+        const mine = u.faction === g.activeFaction;
+        const dim =
+          (g.phase === "move" && mine && (u.moved || u.locked)) ||
+          (g.phase === "combat" && mine && u.acted) ||
+          (g.phase === "combat" && !mine && game.attackedIds && game.attackedIds.has(u.id));
+        if (dim) {
           ctx.fillStyle = "rgba(0,0,0,.28)"; roundRect(ctx, x, y, w, hh, br); ctx.fill();
         }
       },
@@ -117,10 +132,21 @@
       for (const [, cell] of reachable) hs.push({ hex: cell, fill: "rgba(60,150,60,.32)" });
     }
     if (game.phase === "combat") {
+      const un = game.unresolvedCombat ? game.unresolvedCombat() : { mustAttack: [], mustBeAttacked: [] };
+      const mustIds = new Set(un.mustBeAttacked.map((u) => u.id));
       for (const e of game.enemiesOf(game.activeFaction)) {
-        if (game.attackersFor(e).length > 0)
-          hs.push({ hex: e, stroke: "rgba(210,40,40,.9)", lineWidth: 3, scale: 0.96 });
+        if (!attackable(e)) continue;
+        // Mandatory battles burn brighter than merely available ones.
+        hs.push(mustIds.has(e.id)
+          ? { hex: e, stroke: "rgba(230,30,30,.95)", lineWidth: 4, scale: 0.96 }
+          : { hex: e, stroke: "rgba(210,40,40,.55)", lineWidth: 2, scale: 0.96 });
       }
+      // Your own units that still owe an attack.
+      for (const u of un.mustAttack)
+        hs.push({ hex: u, stroke: "rgba(240,180,40,.9)", lineWidth: 2.5, scale: 0.9 });
+      // The battle being grouped right now.
+      for (const t of targets)
+        hs.push({ hex: t, fill: "rgba(244,210,58,.3)", stroke: "#f4d23a", lineWidth: 3, scale: 0.93 });
     }
     if (inspected) hs.push({ hex: inspected, stroke: "rgba(255,255,255,.85)", lineWidth: 2, scale: 0.9 });
     return hs;
@@ -296,16 +322,26 @@
         focus({ q, r });
         renderInspector(); draw(); syncSel(); syncUndo(); return;
       }
-      if (u && u.faction === game.activeFaction && !u.moved) {
+      if (u && game.canMove(u)) {
         selected = u; reachable = game.reachable(u); focus(u);
-      } else { selected = null; reachable = new Map(); }
+      } else {
+        if (u && u.faction === game.activeFaction && u.locked)
+          flash("Locked in an enemy Zone of Control — this unit must stand and fight.");
+        selected = null; reachable = new Map();
+      }
       renderInspector(); draw(); syncSel();
-    } else { // combat
+    } else { // combat: taps on enemies group the next battle
       if (u && u.faction !== game.activeFaction) {
-        const atk = game.attackersFor(u);
-        if (atk.length) { focus(u); openCombat(u, atk); }
-      } else { selected = null; }
-      renderInspector(); draw(); syncSel();
+        const i = targets.indexOf(u);
+        if (i >= 0) targets.splice(i, 1);
+        else if (attackable(u)) { targets.push(u); focus(u); }
+        else flash(game.attackedIds && game.attackedIds.has(u.id)
+          ? "That unit has already been attacked this phase."
+          : "No friendly unit is in range of that enemy.");
+      } else if (!u) {
+        targets = []; selected = null;
+      }
+      renderInspector(); draw(); syncSel(); syncAttack();
     }
   }
 
@@ -354,27 +390,90 @@
   $("hexInfoClose").onclick = () => { inspected = null; renderInspector(); draw(); };
 
   // --------------------------- combat dialog -------------------------------
+  // pending: { defenders:[units], eligible:[units], chosen:Set<unitId> }
   let pending = null;
-  function openCombat(defender, attackers) {
-    const atk = game.attackerStrength(attackers);
-    const def = game.defenderStrength(defender);
-    const col = game.oddsColumn(atk, def);
-    const t = game.terrainAt(defender.q, defender.r);
-    pending = { defender, attackers };
-    const bomb = attackers.filter((a) => global.Hex.distance(a, defender) >= 2).length;
-    $("cbAtk").textContent = `${atk}  (${attackers.length} unit${attackers.length > 1 ? "s" : ""}` +
-      `${bomb ? `, ${bomb} bombarding` : ""})`;
-    $("cbBomb").hidden = bomb === 0;
-    $("cbDef").textContent = `${factionById(defender.faction).name} ${game.typeOf(defender).name} — CS ${game.combat(defender)}`;
-    $("cbTer").textContent = `${t.name} (×${t.defMult}) → def ${def}`;
-    $("odds").textContent = col;
+  const Hx = () => global.Hex;
+  const colLabel = (col) =>
+    global.NAW_COMMON ? global.NAW_COMMON.columnLabel(col) : col;
+
+  // Eligible attackers for a battle: every unacted friendly unit in range of
+  // at least one of the defenders.
+  function eligibleFor(defenders) {
+    const list = [];
+    for (const d of defenders)
+      for (const a of game.attackersFor(d))
+        if (!list.includes(a)) list.push(a);
+    return list;
+  }
+  // Mirrors the engine's battle validation so the Attack! button can grey out.
+  function battleValid(defenders, chosen) {
+    if (!chosen.length) return false;
+    if (defenders.length > 1) {
+      for (const d of defenders)
+        if (!chosen.some((a) => Hx().distance(a, d) === 1)) return false;
+    }
+    return true;
+  }
+
+  function openCombat(defenders) {
+    pending = {
+      defenders,
+      eligible: eligibleFor(defenders),
+      chosen: null,
+    };
+    pending.chosen = new Set(pending.eligible.map((a) => a.id)); // all in by default
+    // Attacker chips (the player picks who joins the battle).
+    const strip = $("cbUnits");
+    strip.innerHTML = "";
+    strip.hidden = pending.eligible.length <= 1;
+    for (const a of pending.eligible) {
+      const t = game.typeOf(a);
+      const b = document.createElement("button");
+      b.className = "cbChip";
+      const bombarding = defenders.every((d) => Hx().distance(a, d) >= 2);
+      b.innerHTML = `${t.glyph} ${t.combat}·${t.move}` +
+        (bombarding ? ` <span class="r">@${Hx().distance(a, defenders[0])}</span>` : "");
+      b.onclick = () => {
+        if (pending.chosen.has(a.id)) pending.chosen.delete(a.id);
+        else pending.chosen.add(a.id);
+        b.classList.toggle("off", !pending.chosen.has(a.id));
+        refreshCombatCard();
+      };
+      strip.appendChild(b);
+    }
+    $("cbTitle").textContent = "Resolve Combat";
+    $("cbInfo").style.display = "";
     $("dieBox").textContent = "";
     $("cbBtns").style.display = "flex";
+    $("advBox").hidden = true;
     $("contBtn").style.display = "none";
-    $("resolveBtn").disabled = false;
+    refreshCombatCard();
     show("cbOv");
   }
-  $("cancelBtn").onclick = () => { pending = null; hide("cbOv"); };
+
+  function refreshCombatCard() {
+    const { defenders, eligible, chosen } = pending;
+    const picked = eligible.filter((a) => chosen.has(a.id));
+    const atk = picked.length ? game.attackerStrength(picked) : 0;
+    const def = defenders.reduce((s, d) => s + game.defenderStrength(d), 0);
+    const bomb = picked.filter((a) => defenders.every((d) => Hx().distance(a, d) >= 2)).length;
+    $("cbAtk").textContent = `${atk}  (${picked.length} unit${picked.length === 1 ? "" : "s"}` +
+      `${bomb ? `, ${bomb} bombarding` : ""})`;
+    $("cbBomb").hidden = bomb === 0;
+    if (defenders.length === 1) {
+      const d = defenders[0], t = game.terrainAt(d.q, d.r);
+      $("cbDef").textContent = `${factionById(d.faction).name} ${game.typeOf(d).name} — CS ${game.combat(d)}`;
+      $("cbTer").textContent = `${t.name} (×${t.defMult}) → def ${def}`;
+    } else {
+      $("cbDef").textContent = `${defenders.length} units — one combined battle`;
+      $("cbTer").textContent = `combined defense (with terrain) → ${def}`;
+    }
+    const valid = battleValid(defenders, picked);
+    $("odds").textContent = valid ? colLabel(game.oddsColumn(atk, def)) : "—";
+    $("resolveBtn").disabled = !valid;
+  }
+
+  $("cancelBtn").onclick = () => { pending = null; hide("cbOv"); draw(); syncSel(); syncAttack(); };
   $("resolveBtn").onclick = () => {
     if (!pending) return;
     $("resolveBtn").disabled = true;
@@ -384,16 +483,60 @@
       if (++ticks >= 8) { clearInterval(spin); resolve(); }
     }, 55);
   };
-  $("contBtn").onclick = () => { hide("cbOv"); draw(); syncSel(); };
+  $("contBtn").onclick = () => { hide("cbOv"); draw(); syncSel(); syncAttack(); syncHud(); };
 
   function resolve() {
-    const res = game.resolveCombat(pending.defender, pending.attackers);
-    $("dieBox").innerHTML = `Die <b>${res.die}</b> → <b>${res.code}</b> — ${res.note}`;
-    flash(`${res.column} · roll ${res.die} → ${res.note}`);
+    const picked = pending.eligible.filter((a) => pending.chosen.has(a.id));
+    const res = game.resolveCombat(pending.defenders, picked);
     pending = null;
+    targets = [];
+    if (!res.ok) { // the engine refused (should be rare — the card validates)
+      hide("cbOv"); flash(res.reason); draw(); syncSel(); syncAttack();
+      return;
+    }
+    $("dieBox").innerHTML = `Die <b>${res.die}</b> → <b>${res.code}</b> — ${res.note}`;
+    flash(`${colLabel(res.column)} · roll ${res.die} → ${res.note}`);
     $("cbBtns").style.display = "none";
+    if (res.advance && game.pendingAdvance) showAdvance();
+    else $("contBtn").style.display = "block";
+    draw(); syncHud();
+  }
+
+  // ----------------------- advance after combat -----------------------------
+  function showAdvance() {
+    const p = game.pendingAdvance;
+    const box = $("advBtns");
+    box.innerHTML = "";
+    for (const id of p.unitIds) {
+      const u = game.units[id], t = game.typeOf(u);
+      const hex = p.hexes.find((h) => Hx().distance(u, h) === 1);
+      if (!hex) continue;
+      const b = document.createElement("button");
+      b.textContent = `Advance ${t.glyph} ${t.combat}·${t.move}`;
+      b.onclick = () => { game.advanceAfterCombat(u, hex.q, hex.r); finishAdvance(); };
+      box.appendChild(b);
+    }
+    const hold = document.createElement("button");
+    hold.className = "hold";
+    hold.textContent = "Stand fast";
+    hold.onclick = () => { game.declineAdvance(); finishAdvance(); };
+    box.appendChild(hold);
+    $("advBox").hidden = false;
+  }
+  function finishAdvance() {
+    $("advBox").hidden = true;
     $("contBtn").style.display = "block";
-    draw();
+    draw(); syncSel();
+  }
+  // A save made mid-prompt restores with the advance still pending: reopen it.
+  function reopenAdvance() {
+    $("cbTitle").textContent = "Advance After Combat";
+    $("cbInfo").style.display = "none";
+    $("dieBox").textContent = "The last battle cleared a hex.";
+    $("cbBtns").style.display = "none";
+    $("contBtn").style.display = "none";
+    showAdvance();
+    show("cbOv");
   }
 
   // ------------------------------ overlays ---------------------------------
@@ -414,6 +557,8 @@
     // player left behind; every later turn hand-off refocuses as usual.
     if (resumedCamera) resumedCamera = false; else focusActive();
     syncHud(); draw(); syncSel(); syncFit();
+    // A save written mid-advance resumes with the decision still owed.
+    if (game && game.pendingAdvance) reopenAdvance();
   });
   $("help").onclick = () => show("helpOv");
   $("helpClose").onclick = () => hide("helpOv");
@@ -472,8 +617,31 @@
   }
 
   // ------------------------------- HUD -------------------------------------
-  const actBtn = $("actBtn"), undoBtn = $("undoBtn");
-  actBtn.onclick = () => { if (game && !game.over && !anyOverlay()) game.endPhase(); };
+  const actBtn = $("actBtn"), undoBtn = $("undoBtn"), attackBtn = $("attackBtn");
+  actBtn.onclick = () => {
+    if (!game || game.over || anyOverlay()) return;
+    const r = game.endPhase();
+    if (r && r.ok === false) {
+      const un = r.unresolved;
+      if (un) {
+        const n = un.mustBeAttacked.length || un.mustAttack.length;
+        flash(`Combat is compulsory — ${n} mandatory battle${n === 1 ? "" : "s"} left. ` +
+              "Tap the highlighted enemies.");
+        focus(un.mustBeAttacked[0] || un.mustAttack[0]);
+      } else flash(r.reason);
+      draw(); syncSel();
+    }
+  };
+  attackBtn.onclick = () => {
+    if (!game || game.over || anyOverlay() || game.phase !== "combat") return;
+    if (targets.length) { focus(targets[0]); openCombat(targets.slice()); }
+  };
+  function syncAttack() {
+    const on = game && !game.over && game.phase === "combat" && targets.length > 0;
+    attackBtn.classList.toggle("hidden", !on);
+    if (on) attackBtn.textContent =
+      targets.length === 1 ? "Attack" : `Attack (${targets.length})`;
+  }
   undoBtn.onclick = () => {
     if (!game || game.over || anyOverlay()) return;
     const u = game.undoMove();
@@ -492,8 +660,10 @@
       $("turnPill").textContent = "—";
       $("sidePill").textContent = ""; $("sidePill").style.background = "transparent";
       $("phaseTxt").textContent = "Choose a scenario";
+      $("demPill").hidden = true;
       actBtn.textContent = "End Movement";
       undoBtn.classList.add("hidden");
+      attackBtn.classList.add("hidden");
       $("sel").innerHTML = `<span class="muted">Pick a battle to begin.</span>`;
       return;
     }
@@ -503,16 +673,37 @@
     $("phaseTxt").textContent = game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
+    // Demoralization ticker: eliminated SP vs each army's breaking point.
+    const dp = $("demPill");
+    if (DEF.demoralization && global.NAW_COMMON) {
+      dp.hidden = false;
+      dp.textContent = global.NAW_COMMON.demoralizationStatus(game)
+        .map((s) => `${s.short || s.name} ${s.lost}/${s.level}`).join(" · ");
+    } else dp.hidden = true;
     syncUndo();
+    syncAttack();
     syncSel();
   }
   function syncSel() {
     const el = $("sel");
     if (!game) return;
     if (game.phase === "combat") {
-      const n = game.enemiesOf(game.activeFaction).filter((u) => game.attackersFor(u).length > 0).length;
+      if (targets.length) {
+        el.innerHTML = `<b>Battle:</b> ${targets.length} defender${targets.length > 1 ? "s" : ""} picked. ` +
+          `<span class="muted">Add more, or press Attack.</span>`;
+        return;
+      }
+      const un = game.unresolvedCombat ? game.unresolvedCombat()
+                                       : { mustAttack: [], mustBeAttacked: [] };
+      if (un.mustBeAttacked.length || un.mustAttack.length) {
+        const n = Math.max(un.mustBeAttacked.length, 1);
+        el.innerHTML = `<b>Combat is compulsory.</b> ` +
+          `<span class="muted">${n} mandatory battle${n > 1 ? "s" : ""} — tap enemies to group one.</span>`;
+        return;
+      }
+      const n = game.enemiesOf(game.activeFaction).filter(attackable).length;
       el.innerHTML = n > 0
-        ? `<b>Combat.</b> Tap a highlighted enemy to attack. <span class="muted">(${n} target${n > 1 ? "s" : ""})</span>`
+        ? `<b>Combat.</b> Tap enemies to group a battle. <span class="muted">(${n} possible target${n > 1 ? "s" : ""})</span>`
         : `<b>Combat.</b> <span class="muted">No targets in range — end combat.</span>`;
       return;
     }
@@ -521,8 +712,11 @@
         ? `<b>Move.</b> Tap a highlighted hex. <span class="muted">(${reachable.size} option${reachable.size > 1 ? "s" : ""})</span>`
         : `<b>Move.</b> <span class="muted">This unit has no available moves.</span>`;
     } else {
-      const left = game.living(game.activeFaction).filter((u) => !u.moved).length;
-      el.innerHTML = `<span class="muted">Movement. Tap one of your units to move it. (${left} unmoved)</span>`;
+      const mine = game.living(game.activeFaction);
+      const left = mine.filter((u) => !u.moved && !u.locked).length;
+      const locked = mine.filter((u) => u.locked).length;
+      el.innerHTML = `<span class="muted">Movement. Tap one of your units to move it. ` +
+        `(${left} unmoved${locked ? `, ${locked} locked in ZOC` : ""})</span>`;
     }
   }
   function flash(msg) {
@@ -543,6 +737,7 @@
       game = new Game(DEF);
     }
     selected = null; reachable = new Map(); inspected = null; pending = null;
+    targets = [];
     pointers.clear(); drag = null; pinch = null; zoomBeforeFit = null;
     resumedCamera = false;
     renderInspector();
@@ -563,10 +758,15 @@
       renderer.frameDefault();
     }
 
-    game.events.on("sideChange", () => { selected = null; showPass(); });
+    game.events.on("sideChange", () => { selected = null; targets = []; showPass(); });
     game.events.on("phase", () => {
-      selected = null; reachable = new Map(); inspected = null;
+      selected = null; targets = []; reachable = new Map(); inspected = null;
       focusActive(); renderInspector(); syncHud(); draw(); syncFit();
+    });
+    game.events.on("reinforce", ({ units }) => {
+      const grp = units[0];
+      flash(`Reinforcements — ${units.length} unit${units.length > 1 ? "s" : ""} arrive!`);
+      if (grp) focus(grp);
     });
     game.events.on("gameover", ({ winner, reason }) => {
       const fac = winner ? factionById(winner) : null;
@@ -580,6 +780,8 @@
     game.events.on("move", save);
     game.events.on("undo", save);
     game.events.on("combat", save);
+    game.events.on("advance", save);
+    game.events.on("reinforce", save);
     game.events.on("phase", save);
     game.events.on("gameover", clearSave);
 

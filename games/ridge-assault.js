@@ -1,38 +1,40 @@
 /* =========================================================================
-   ridge-assault.js — A scenario built ON the engine. Pure data + a few small
-   callbacks. This is the pattern for authoring new hex games: describe the
-   terrain, units, map, setup, CRT and victory goal — the engine does the rest.
+   ridge-assault.js — A scenario built ON the engine, playing by the NAPOLEON
+   AT WAR common rules (NAW_COMMON.buildScenario supplies the CRT, mandatory
+   combat, sticky ZOC, one-hex retreats and advance-after-combat). Everything
+   in this file is the scenario's exclusive content: terrain flavour, map,
+   armies and the victory goal. This is the pattern for authoring new games.
    Exposed as the global `RIDGE_ASSAULT`.
    ========================================================================= */
 (function (global) {
   "use strict";
+  const NAW = global.NAW_COMMON;
 
-  const RIDGE_ASSAULT = {
+  const RIDGE_ASSAULT = NAW.buildScenario({
     id: "ridge-assault",
     title: "Ridge Assault",
     blurb: "9×11 — a short, sharp fight for one town. Fits on a phone screen.",
     brief:
       "The French (you go first) must capture the Town objective by the end " +
-      "of Turn 6. The Allies win by holding it.",
-    orientation: "pointy",
-    offsetMode: "odd-r",
+      "of Turn 6. The Allies win by holding it. Napoleon at War rules: " +
+      "adjacent units MUST fight, units starting next to the enemy are " +
+      "locked, retreats are one hex, and a victor may advance into a hex " +
+      "it clears.",
     maxTurns: 6,
-    phases: ["move", "combat"],
 
     // combat = strength, move = movement allowance, range = attack reach (default 1).
     unitTypes: {
-      inf: { name: "Infantry",  glyph: "I", combat: 4, move: 4 },
-      cav: { name: "Cavalry",   glyph: "C", combat: 3, move: 8 },
-      art: { name: "Artillery", glyph: "A", combat: 5, move: 3, range: 2 },
-      grd: { name: "Guard",     glyph: "G", combat: 6, move: 4 },
+      inf: NAW.unit("Infantry",  "I", 4, 4),
+      cav: NAW.unit("Cavalry",   "C", 3, 8),
+      art: NAW.unit("Artillery", "A", 5, 3, { range: 2 }),
+      grd: NAW.unit("Guard",     "G", 6, 4),
     },
 
-    // moveCost = points to ENTER; defMult = defender strength multiplier.
+    // Exclusive terrain flavour: this ridge is steeper and its town more
+    // defensible than the series standard (×3 rather than ×2).
     terrain: {
-      ".": { name: "Clear", color: "#cfe3b8", moveCost: 1, defMult: 1 },
-      "w": { name: "Woods", color: "#5a8f4e", moveCost: 2, defMult: 2 },
-      "h": { name: "Hill",  color: "#c9a36a", moveCost: 2, defMult: 3 },
-      "t": { name: "Town",  color: "#b9b2a6", moveCost: 1, defMult: 3 },
+      "h": { name: "Hill", color: "#c9a36a", moveCost: 2, defMult: 3 },
+      "t": { name: "Town", color: "#b9b2a6", moveCost: 1, defMult: 3 },
     },
 
     factions: [
@@ -61,8 +63,8 @@
       { faction: "al", units: [ [4, 1, "inf"], [4, 4, "grd"], [3, 3, "art"], [5, 3, "inf"], [6, 4, "cav"] ] },
     ],
 
-    // Uses the engine's default CRT (omit `crt` to accept it), default movement,
-    // ZOC and combat rules. Only the victory goal is scenario-specific:
+    // The common rules handle movement, ZOC, combat and the CRT; only the
+    // victory goal is scenario-specific:
     victory(game, opts) {
       // Win by elimination (either side).
       for (const f of game.factions) {
@@ -73,7 +75,7 @@
       }
       // French win the instant they occupy the objective town.
       const obj = game.objectives[0];
-      const holder = game.units.find((u) => u.alive && u.q === obj.q && u.r === obj.r);
+      const holder = game.unitAt(obj.q, obj.r);
       if (holder && holder.faction === "fr")
         return { winner: "fr", reason: "The French have stormed the town!" };
       // On timeout the defenders have held.
@@ -81,7 +83,7 @@
         return { winner: "al", reason: "The Allies held the ridge until nightfall." };
       return null;
     },
-  };
+  });
 
   global.RIDGE_ASSAULT = RIDGE_ASSAULT;
   (global.HEX_SCENARIOS = global.HEX_SCENARIOS || []).push(RIDGE_ASSAULT);

@@ -1,7 +1,9 @@
 /* =========================================================================
    sambre-crossing.js — A large scenario (24 x 18 = 432 hexes) built on the
-   engine. Deliberately bigger than any phone screen: the renderer's camera
-   (drag to pan, pinch/wheel to zoom) is what makes it playable.
+   engine and playing by the NAPOLEON AT WAR common rules (via
+   NAW_COMMON.buildScenario). Deliberately bigger than any phone screen: the
+   renderer's camera (drag to pan, pinch/wheel to zoom) is what makes it
+   playable.
 
    The river splits the map in two and is impassable — only three crossings
    let an army over, so the manoeuvre is choosing which one to force.
@@ -9,38 +11,34 @@
    ========================================================================= */
 (function (global) {
   "use strict";
+  const NAW = global.NAW_COMMON;
 
-  const SAMBRE_CROSSING = {
+  const SAMBRE_CROSSING = NAW.buildScenario({
     id: "sambre-crossing",
     title: "Sambre Crossing",
     blurb: "24×18 — force a river against three towns. Pan and zoom to fight it.",
     brief:
       "The French must seize the three towns beyond the river by the end of " +
       "Turn 10. The Allies win by holding two of them. The river can only be " +
-      "crossed at the three fords — pick one and force it.",
-    orientation: "pointy",
-    offsetMode: "odd-r",
+      "crossed at the three fords — pick one and force it. Napoleon at War " +
+      "rules: adjacent units MUST fight, units starting next to the enemy " +
+      "are locked, retreats are one hex, and a victor may advance into a " +
+      "hex it clears.",
     maxTurns: 10,
-    phases: ["move", "combat"],
 
     // combat = strength, move = movement allowance, range = attack reach (default 1).
     unitTypes: {
-      inf: { name: "Infantry",  glyph: "I", combat: 4, move: 4 },
-      cav: { name: "Cavalry",   glyph: "C", combat: 3, move: 8 },
-      art: { name: "Artillery", glyph: "A", combat: 5, move: 3, range: 2 },
-      grd: { name: "Guard",     glyph: "G", combat: 6, move: 4 },
+      inf: NAW.unit("Infantry",  "I", 4, 4),
+      cav: NAW.unit("Cavalry",   "C", 3, 8),
+      art: NAW.unit("Artillery", "A", 5, 3, { range: 2 }),
+      grd: NAW.unit("Guard",     "G", 6, 4),
     },
 
-    // moveCost = points to ENTER; defMult = defender strength multiplier.
+    // Exclusive terrain flavour on top of the series palette: steeper hills
+    // and stouter towns (×3), same colours as before.
     terrain: {
-      ".": { name: "Clear",  color: "#cfe3b8", moveCost: 1, defMult: 1 },
-      "w": { name: "Woods",  color: "#5a8f4e", moveCost: 2, defMult: 2 },
-      "h": { name: "Hill",   color: "#c9a36a", moveCost: 2, defMult: 3 },
-      "t": { name: "Town",   color: "#b9b2a6", moveCost: 1, defMult: 3 },
-      "m": { name: "Marsh",  color: "#8f9b6a", moveCost: 3, defMult: 1 },
-      "=": { name: "Ford",   color: "#a89468", moveCost: 2, defMult: 1 },
-      "~": { name: "River",  color: "#4a7fa8", moveCost: Infinity, defMult: 1,
-             passable: false },
+      "h": { name: "Hill", color: "#c9a36a", moveCost: 2, defMult: 3 },
+      "t": { name: "Town", color: "#b9b2a6", moveCost: 1, defMult: 3 },
     },
 
     factions: [
@@ -91,7 +89,8 @@
       ] },
     ],
 
-    // Engine defaults for the CRT, movement and ZOC; only the goal is ours.
+    // The common rules handle movement, ZOC, combat and the CRT; only the
+    // goal is ours.
     victory(game, opts) {
       // Win by elimination (either side).
       for (const f of game.factions) {
@@ -103,7 +102,7 @@
       // Count towns held right now.
       const held = { fr: 0, al: 0 };
       for (const o of game.objectives) {
-        const u = game.units.find((x) => x.alive && x.q === o.q && x.r === o.r);
+        const u = game.unitAt(o.q, o.r);
         if (u) held[u.faction]++;
       }
       // Taking all three ends it on the spot.
@@ -117,7 +116,7 @@
       }
       return null;
     },
-  };
+  });
 
   global.SAMBRE_CROSSING = SAMBRE_CROSSING;
   (global.HEX_SCENARIOS = global.HEX_SCENARIOS || []).push(SAMBRE_CROSSING);

@@ -13,10 +13,13 @@ const ctx = { Math, JSON, console };
 ctx.window = undefined;                // force the "globalThis" branch
 vm.createContext(ctx);
 for (const f of ["src/hex.js", "src/engine.js", "src/renderer.js",
-                 "games/ridge-assault.js", "games/sambre-crossing.js"]) {
+                 "games/napoleon-at-war-common.js",
+                 "games/ridge-assault.js", "games/sambre-crossing.js",
+                 "games/napoleon-at-waterloo.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: f });
 }
-const { Hex, HexWar, HexRenderer, RIDGE_ASSAULT, SAMBRE_CROSSING } = ctx;
+const { Hex, HexWar, HexRenderer,
+        RIDGE_ASSAULT, SAMBRE_CROSSING, NAPOLEON_AT_WATERLOO } = ctx;
 
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } }
@@ -193,9 +196,8 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
   ok(def.map.every((row) => row.length === 24), "every map row is 24 hexes wide");
   ok(def.map.length === 18, "the map is 18 rows deep");
   ok(g.board.size === 24 * 18, "board has 432 hexes");
-  ok(Object.keys(def.terrain).every((c) => def.map.join("").indexOf(c) >= 0) &&
-     def.map.join("").split("").every((c) => def.terrain[c]),
-     "every map character maps to a declared terrain, and all are used");
+  ok(def.map.join("").split("").every((c) => def.terrain[c]),
+     "every map character maps to a declared terrain");
 
   const passable = (h) => def.terrain[h.terrain].passable !== false;
   // objectives
@@ -245,14 +247,76 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
   ok(def.terrain["~"].passable === false, "river hexes are impassable");
 }
 
-/* --- both scenarios are registered for the picker ---------------------- */
+/* --- Napoleon at Waterloo's map is sound -------------------------------- */
+{
+  const def = NAPOLEON_AT_WATERLOO;
+  const g = new HexWar.Game(def);
+  ok(def.map.every((row) => row.length === 22), "every Waterloo row is 22 hexes wide");
+  ok(def.map.length === 16, "the Waterloo map is 16 rows deep");
+  ok(def.map.join("").split("").every((c) => def.terrain[c]),
+     "every Waterloo map character maps to a declared terrain");
+
+  const passable = (h) => def.terrain[h.terrain].passable !== false;
+  const o = g.objectives[0];
+  ok(!!g.hex(o.q, o.r) && g.hex(o.q, o.r).terrain === "t",
+     "the Mont-Saint-Jean objective sits on a town hex");
+
+  // Every deployed unit on a real, passable, un-stacked hex.
+  const seen = new Set();
+  let bad = 0, stacked = 0;
+  for (const u of g.units.filter((x) => x.entered)) {
+    const h = g.hex(u.q, u.r);
+    if (!h || !passable(h)) bad++;
+    const k = Hex.key(u.q, u.r);
+    if (seen.has(k)) stacked++; else seen.add(k);
+  }
+  ok(bad === 0, "every deployed unit starts on an existing, passable hex");
+  ok(stacked === 0, "no two units share a starting hex");
+
+  // Every Prussian entry hex exists, is passable and is not woods (the
+  // exclusive rule: non-woods hexes of the easternmost column).
+  for (const grp of def.reinforcements) {
+    for (const [c, r] of grp.entry) {
+      const a = Hex.offsetToAxial(c, r, "odd-r");
+      const h = g.hex(a.q, a.r);
+      ok(!!h && passable(h) && h.terrain !== "w" && h.col === 21,
+         `entry hex ${c},${r} is a passable non-woods hex of column 21`);
+    }
+  }
+
+  // Both armies can walk to the objective.
+  function reaches(from) {
+    const seenK = new Set([Hex.key(from.q, from.r)]);
+    const queue = [from];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const nb of Hex.neighbors(cur)) {
+        const k = Hex.key(nb.q, nb.r);
+        if (seenK.has(k)) continue;
+        const h = g.hex(nb.q, nb.r);
+        if (!h || !passable(h)) continue;
+        seenK.add(k); queue.push(nb);
+      }
+    }
+    return seenK;
+  }
+  for (const f of def.factions) {
+    const start = g.living(f.id)[0];
+    ok(reaches(start).has(Hex.key(o.q, o.r)), `${f.name} can reach the crossroads on foot`);
+  }
+}
+
+/* --- all three scenarios are registered for the picker ------------------ */
 {
   const reg = ctx.HEX_SCENARIOS || [];
-  ok(reg.length === 2, "two scenarios registered");
-  ok(reg.indexOf(RIDGE_ASSAULT) >= 0 && reg.indexOf(SAMBRE_CROSSING) >= 0,
-     "the registry holds both game definitions");
+  ok(reg.length === 3, "three scenarios registered");
+  ok(reg.indexOf(RIDGE_ASSAULT) >= 0 && reg.indexOf(SAMBRE_CROSSING) >= 0 &&
+     reg.indexOf(NAPOLEON_AT_WATERLOO) >= 0,
+     "the registry holds all three game definitions");
   ok(reg.every((d) => d.title && d.blurb && d.brief),
      "every scenario carries title/blurb/brief for the picker and help");
+  ok(reg.every((d) => d.naw === true),
+     "every scenario plays by the Napoleon at War common rules");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

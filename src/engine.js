@@ -26,15 +26,24 @@
        factions:  [{ id,name,short,color,dark }],
        map:       ["...rows of terrain codes..."],
        objectives:[{col,row,owner}] (optional, for victory helpers),
-       setup:     [{ faction, units:[[col,row,typeKey], ...] }],
+       setup:     [{ faction, army?, units:[[col,row,typeKey], ...] }],
+       reinforcements: [{ turn, faction, army?, entry:[[col,row],...],
+                          units:["typeKey", ...] }],   // optional, scheduled arrivals
+       demoralization: { armyOrFactionId: level },     // optional, read by victory()
        phases:    ["move","combat"],          // per-faction, in order
        maxTurns:  number,
        crt:       { "columns":[...], table:{col:[6 results]} },   // optional override
        rules:     {  (all optional — sensible defaults provided)
+         // function hooks:
          stepCost(game,unit,fromHex,toHex), canStandOn(game,unit,hex),
          isZOC(game,side,hex), attackerStrength(game,atkList),
          defenderStrength(game,def,hex), oddsColumn(game,atk,def),
-         rollDie(game)->1..6, applyResult(game,code,def,atkList),
+         rollDie(game)->1..6, applyResult(game,code,defenders,atkList),
+         skipPhase(game,phaseName)->bool,     // e.g. night turns skip "combat"
+         // boolean flags (names never collide with the hooks above):
+         lockedZOC,          // units starting Movement in an enemy ZOC may not move
+         mandatoryCombat,    // combat obligations + endPhase gating
+         advanceAfterCombat, // victor may advance into a vacated defender hex
        },
        victory(game) -> { winner, reason } | null,
      }
@@ -76,24 +85,42 @@
         const a = Hex.offsetToAxial(o.col, o.row, this.offsetMode);
         return { key: Hex.key(a.q, a.r), q: a.q, r: a.r, owner: o.owner };
       });
-      // Units
+      // Units. Reinforcements are created up front too (entered:false, held
+      // off-map) so unit ids and counts are stable for save/restore.
       this.units = [];
       let id = 0;
       for (const grp of this.def.setup) {
         for (const u of grp.units) {
           const a = Hex.offsetToAxial(u[0], u[1], this.offsetMode);
           this.units.push({
-            id: id++, faction: grp.faction, type: u[2],
+            id: id++, faction: grp.faction, army: grp.army, type: u[2],
             q: a.q, r: a.r, alive: true, moved: false, acted: false,
+            entered: true, locked: false, freshArrival: false,
           });
         }
       }
+      (this.def.reinforcements || []).forEach((grp, gi) => {
+        for (const type of grp.units) {
+          const e = grp.entry[0];
+          const a = Hex.offsetToAxial(e[0], e[1], this.offsetMode);
+          this.units.push({
+            id: id++, faction: grp.faction, army: grp.army, type,
+            q: a.q, r: a.r, alive: true, moved: false, acted: false,
+            entered: false, locked: false, freshArrival: false, rgroup: gi,
+          });
+        }
+      });
       // Turn state
       this.turn = 1;
       this.sideIndex = 0;             // index into factions[] whose turn it is
       this.phaseIndex = 0;
       this.over = false;
       this.winner = null;
+      this.pendingAdvance = null;     // {hexes:[{q,r}], faction, unitIds} while a
+                                      // post-combat advance awaits a decision
+      this.attackedIds = new Set();       // defenders already fought this phase
+      this.mustAttackIds = new Set();     // mandatory-combat obligations,
+      this.mustBeAttackedIds = new Set(); // computed at combat-phase entry
       this._enterPhase();
     }
 
@@ -103,14 +130,25 @@
     hex(q, r) { return this.board.get(Hex.key(q, r)); }
     terrainAt(q, r) { const h = this.hex(q, r); return h ? this.terrain[h.terrain] : null; }
     typeOf(u) { return this.unitTypes[u.type]; }
-    unitAt(q, r) { return this.units.find((u) => u.alive && u.q === q && u.r === r); }
-    living(faction) { return this.units.filter((u) => u.alive && u.faction === faction); }
-    enemiesOf(faction) { return this.units.filter((u) => u.alive && u.faction !== faction); }
+    // A unit that exists on the board right now (reinforcements not yet
+    // entered are alive but invisible to every board query).
+    onMap(u) { return u.alive && u.entered !== false; }
+    unitAt(q, r) { return this.units.find((u) => this.onMap(u) && u.q === q && u.r === r); }
+    living(faction) { return this.units.filter((u) => this.onMap(u) && u.faction === faction); }
+    enemiesOf(faction) { return this.units.filter((u) => this.onMap(u) && u.faction !== faction); }
     isObjective(q, r) { return this.objectives.some((o) => o.q === q && o.r === r); }
 
     combat(u) { return this.typeOf(u).combat; }
     move(u) { return this.typeOf(u).move; }
     range(u) { return this.typeOf(u).range || 1; }
+
+    // Cumulative eliminated Strength Points — derived, nothing to serialize.
+    // `army` narrows to a tagged army within the faction (e.g. Prussians).
+    lostSP(faction, army) {
+      return this.units
+        .filter((u) => !u.alive && u.faction === faction && (army == null || u.army === army))
+        .reduce((s, u) => s + this.combat(u), 0);
+    }
 
     /* ------------------------------- rules ------------------------------- */
     // Default rule implementations; a GameDef may override any via def.rules.
@@ -118,6 +156,8 @@
       const r = this.def.rules || {};
       return r[name] ? r[name].bind(null) : fallback;
     }
+    // Boolean rule flags (kept disjoint from the function-hook names).
+    flag(name) { return !!((this.def.rules || {})[name]); }
 
     // Zone of Control: a hex is in `faction`'s enemies' ZOC if adjacent to an enemy unit.
     isEnemyZOC(faction, q, r) {
@@ -150,9 +190,11 @@
     /* ----------------------------- movement ------------------------------ */
     reachable(unit) {
       const faction = unit.faction;
+      // A freshly arrived reinforcement has already paid 1 MP for its entry hex.
+      const budget = this.move(unit) - (unit.freshArrival ? 1 : 0);
       return Hex.reachable({
         start: { q: unit.q, r: unit.r },
-        budget: this.move(unit),
+        budget,
         neighborsOf: (h) => Hex.neighbors(h).filter((n) => this.board.has(Hex.key(n.q, n.r))),
         stepCost: (from, to) => {
           if (this.unitAt(to.q, to.r)) return Infinity; // blocked by any unit
@@ -163,7 +205,10 @@
       });
     }
 
-    canMove(unit) { return this.phase === "move" && unit.faction === this.activeFaction && !unit.moved; }
+    canMove(unit) {
+      return this.phase === "move" && unit.faction === this.activeFaction &&
+        this.onMap(unit) && !unit.moved && !unit.locked;
+    }
 
     moveUnit(unit, q, r) {
       if (!this.canMove(unit)) return { ok: false, reason: "cannot move now" };
@@ -191,7 +236,7 @@
     // All active-faction units within attack range of `defender` (1 unless the
     // unit type sets `range`) that haven't acted this phase.
     attackersFor(defender) {
-      return this.units.filter((u) => u.alive && u.faction === this.activeFaction &&
+      return this.units.filter((u) => this.onMap(u) && u.faction === this.activeFaction &&
         !u.acted && Hex.distance(u, defender) <= this.range(u));
     }
 
@@ -250,30 +295,38 @@
       return true;
     }
 
-    applyResult(code, defender, attackers) {
+    // Default result application. `defenders` may hold several units (they
+    // were attacked as one combined battle); results hit every one of them.
+    applyResult(code, defenders, attackers) {
+      defenders = Array.isArray(defenders) ? defenders : [defenders];
       const custom = (this.def.rules || {}).applyResult;
-      if (custom) return custom(this, code, defender, attackers);
-      // Attackers adjacent to the defender are engaged in melee; the rest are
+      if (custom) return custom(this, code, defenders, attackers);
+      // Attackers adjacent to a defender are engaged in melee; the rest are
       // bombarding from range and never suffer adverse attacker results.
-      const engaged = attackers.filter((a) => Hex.distance(a, defender) === 1);
+      const engaged = attackers.filter((a) => defenders.some((d) => Hex.distance(a, d) === 1));
       const threat = engaged[0] || attackers[0];
       const kill = (u) => { u.alive = false; };
       let note = "";
       switch (code) {
-        case "De": kill(defender); note = "Defender destroyed"; break;
-        case "Dr":
-          if (!this.retreat(defender, threat, 2, true)) { kill(defender); note = "Defender trapped — destroyed"; }
-          else note = "Defender retreated"; break;
+        case "De": defenders.forEach(kill); note = "Defender destroyed"; break;
+        case "Dr": {
+          let trapped = false;
+          for (const d of defenders) {
+            if (!this.retreat(d, threat, 2, true)) { kill(d); trapped = true; }
+          }
+          note = trapped ? "Defender trapped — destroyed" : "Defender retreated";
+          break;
+        }
         case "Ex": {
-          kill(defender);
-          let need = this.combat(defender);
+          defenders.forEach(kill);
+          let need = defenders.reduce((s, d) => s + this.combat(d), 0);
           for (const a of engaged.slice().sort((x, y) => this.combat(x) - this.combat(y))) {
             if (need <= 0) break; kill(a); need -= this.combat(a);
           }
           note = "Exchange — losses on both sides"; break;
         }
         case "Ar":
-          engaged.forEach((a) => this.retreat(a, defender, 1, false));
+          engaged.forEach((a) => this.retreat(a, defenders[0], 1, false));
           note = engaged.length ? "Attackers pushed back" : "Bombardment driven off — guns unharmed";
           break;
         case "Ae": {
@@ -287,49 +340,216 @@
       return note;
     }
 
-    // Resolve an attack on `defender`. Attackers auto-gathered unless supplied.
-    resolveCombat(defender, attackers) {
+    // Resolve an attack on `defenders` (a unit or an array of units fought as
+    // one combined battle). Attackers auto-gathered unless supplied.
+    resolveCombat(defenders, attackers) {
       if (this.phase !== "combat") return { ok: false, reason: "not combat phase" };
-      attackers = attackers || this.attackersFor(defender);
+      if (this.pendingAdvance) return { ok: false, reason: "advance pending" };
+      defenders = Array.isArray(defenders) ? defenders.slice() : [defenders];
+      if (!defenders.length) return { ok: false, reason: "no defenders" };
+      for (const d of defenders) {
+        if (!this.onMap(d) || d.faction === this.activeFaction)
+          return { ok: false, reason: "invalid defender" };
+        if (this.flag("mandatoryCombat") && this.attackedIds.has(d.id))
+          return { ok: false, reason: "already attacked this phase" };
+      }
+      const explicit = !!attackers;
+      if (!attackers) {
+        attackers = [];
+        for (const d of defenders)
+          for (const a of this.attackersFor(d))
+            if (!attackers.includes(a)) attackers.push(a);
+      }
       if (!attackers.length) return { ok: false, reason: "no eligible attackers" };
+      if (explicit) {
+        for (const a of attackers) {
+          if (!this.onMap(a) || a.faction !== this.activeFaction || a.acted)
+            return { ok: false, reason: "invalid attacker" };
+          if (!defenders.some((d) => Hex.distance(a, d) <= this.range(a)))
+            return { ok: false, reason: "attacker out of range" };
+        }
+      }
+      // In a combined battle every defender must be engaged by an adjacent
+      // attacker; only a single-defender battle may be a pure bombardment.
+      if (defenders.length > 1) {
+        for (const d of defenders) {
+          if (!attackers.some((a) => Hex.distance(a, d) === 1))
+            return { ok: false, reason: "defender not engaged" };
+        }
+      }
       const atk = this.attackerStrength(attackers);
-      const def = this.defenderStrength(defender);
+      const def = defenders.reduce((s, d) => s + this.defenderStrength(d), 0);
       const column = this.oddsColumn(atk, def);
       const die = this.rollDie();
       const table = (this.def.crt && this.def.crt.table) || DEFAULT_CRT.table;
       const code = table[column][die - 1];
-      const note = this.applyResult(code, defender, attackers);
+      const defHexes = defenders.map((d) => ({ q: d.q, r: d.r }));
+      const note = this.applyResult(code, defenders, attackers);
       attackers.forEach((a) => { if (a.alive) a.acted = true; });
-      const result = { ok: true, attackers, defender, atk, def, column, die, code, note };
+      defenders.forEach((d) => this.attackedIds.add(d.id));
+      // Advance after combat: hexes the defenders no longer hold may be
+      // claimed by ONE surviving engaged attacker, immediately.
+      let advance = null;
+      if (this.flag("advanceAfterCombat")) {
+        const hexes = defHexes.filter((h) => !this.unitAt(h.q, h.r));
+        const unitIds = attackers
+          .filter((a) => a.alive && hexes.some((h) => Hex.distance(a, h) === 1))
+          .map((a) => a.id);
+        if (hexes.length && unitIds.length) {
+          this.pendingAdvance = { hexes, faction: this.activeFaction, unitIds };
+          advance = { hexes, candidates: unitIds.map((i) => this.units[i]) };
+        }
+      }
+      const result = { ok: true, attackers, defenders, defender: defenders[0],
+                       atk, def, column, die, code, note, advance };
       this.events.emit("combat", result);
-      this._checkVictory();
+      if (this._checkVictory()) { this.pendingAdvance = null; result.advance = null; }
       return result;
+    }
+
+    // Move one eligible unit into a hex vacated by the combat just resolved.
+    // Costs no MPs and ignores Zones of Control (per the advance rule).
+    advanceAfterCombat(unit, q, r) {
+      const p = this.pendingAdvance;
+      if (!p) return { ok: false, reason: "no advance pending" };
+      if (!unit || !p.unitIds.includes(unit.id) || !this.onMap(unit))
+        return { ok: false, reason: "unit not eligible" };
+      const hx = (q == null && p.hexes.length === 1)
+        ? p.hexes[0]
+        : p.hexes.find((h) => h.q === q && h.r === r);
+      if (!hx) return { ok: false, reason: "not a vacated hex" };
+      if (this.unitAt(hx.q, hx.r)) return { ok: false, reason: "hex occupied" };
+      if (Hex.distance(unit, hx) !== 1) return { ok: false, reason: "unit not adjacent" };
+      unit.q = hx.q; unit.r = hx.r;
+      this.pendingAdvance = null;
+      this.events.emit("advance", { unit });
+      return { ok: true };
+    }
+
+    declineAdvance() {
+      if (!this.pendingAdvance) return { ok: false, reason: "no advance pending" };
+      this.pendingAdvance = null;
+      this.events.emit("advance", { unit: null });
+      return { ok: true };
+    }
+
+    /* ------------------------ mandatory combat --------------------------- */
+    // Obligations fixed by positions at the start of the Combat Phase:
+    // every phasing unit adjacent to an enemy must attack; every enemy unit
+    // adjacent to a phasing unit must be attacked. (Bombardment range does
+    // not create obligations — only adjacency does.)
+    _computeObligations() {
+      this.mustAttackIds = new Set();
+      this.mustBeAttackedIds = new Set();
+      if (!this.flag("mandatoryCombat")) return;
+      const faction = this.activeFaction;
+      for (const u of this.living(faction)) {
+        for (const nb of Hex.neighbors(u)) {
+          const e = this.unitAt(nb.q, nb.r);
+          if (e && e.faction !== faction) {
+            this.mustAttackIds.add(u.id);
+            this.mustBeAttackedIds.add(e.id);
+          }
+        }
+      }
+    }
+
+    // Obligations still unsatisfied AND still satisfiable. Obligations the
+    // player's own groupings/results have made impossible are excused, so the
+    // phase can never deadlock; anything still fightable must be fought.
+    unresolvedCombat() {
+      const mustAttack = [], mustBeAttacked = [];
+      if (this.phase !== "combat" || !this.flag("mandatoryCombat"))
+        return { mustAttack, mustBeAttacked };
+      const faction = this.activeFaction;
+      for (const id of this.mustBeAttackedIds) {
+        const d = this.units[id];
+        if (!this.onMap(d) || this.attackedIds.has(id)) continue;
+        if (this.attackersFor(d).length) mustBeAttacked.push(d);
+      }
+      for (const id of this.mustAttackIds) {
+        const u = this.units[id];
+        if (!this.onMap(u) || u.acted) continue;
+        const hasTarget = Hex.neighbors(u).some((nb) => {
+          const e = this.unitAt(nb.q, nb.r);
+          return e && e.faction !== faction && !this.attackedIds.has(e.id);
+        });
+        if (hasTarget) mustAttack.push(u);
+      }
+      return { mustAttack, mustBeAttacked };
     }
 
     /* --------------------------- turn / phases --------------------------- */
     _enterPhase() {
       const faction = this.activeFaction;
       this.moveLog = []; // undo history is per-phase
-      if (this.phase === "move") this.living(faction).forEach((u) => (u.moved = false));
-      if (this.phase === "combat") this.living(faction).forEach((u) => (u.acted = false));
+      if (this.phase === "move") {
+        this.living(faction).forEach((u) => { u.moved = false; u.freshArrival = false; });
+        this._placeReinforcements(faction);
+        const lock = this.flag("lockedZOC");
+        this.living(faction).forEach((u) => {
+          u.locked = lock && this.isEnemyZOC(faction, u.q, u.r);
+        });
+      }
+      if (this.phase === "combat") {
+        this.living(faction).forEach((u) => (u.acted = false));
+        this.attackedIds = new Set();
+        this._computeObligations();
+      }
       this.events.emit("phase", { turn: this.turn, faction, phase: this.phase });
     }
 
-    endPhase() {
-      if (this.over) return;
-      if (this._checkVictory()) return;
-      this.phaseIndex++;
-      if (this.phaseIndex < this.phases.length) { this._enterPhase(); return; }
-      // Advance to next faction, or next turn.
-      this.phaseIndex = 0;
-      this.sideIndex++;
-      if (this.sideIndex >= this.factions.length) {
-        this.sideIndex = 0;
-        this.turn++;
-        if (this.turn > this.maxTurns) { this._timeout(); return; }
+    // Scheduled arrivals: each due unit takes the first free, passable hex in
+    // its group's ordered entry list; the blocked stay off-map and retry next
+    // turn. (Auto-placement approximates "enter at the nearest available hex".)
+    _placeReinforcements(faction) {
+      const groups = this.def.reinforcements || [];
+      const placed = [];
+      for (const u of this.units) {
+        if (!u.alive || u.entered !== false) continue;
+        const grp = groups[u.rgroup];
+        if (!grp || grp.faction !== faction || grp.turn > this.turn) continue;
+        const spot = grp.entry
+          .map(([c, r]) => Hex.offsetToAxial(c, r, this.offsetMode))
+          .find((a) => {
+            const h = this.hex(a.q, a.r);
+            return h && this.terrain[h.terrain].passable !== false && !this.unitAt(a.q, a.r);
+          });
+        if (!spot) continue;
+        u.q = spot.q; u.r = spot.r;
+        u.entered = true; u.freshArrival = true; u.moved = false;
+        placed.push(u);
       }
-      this.events.emit("sideChange", { turn: this.turn, faction: this.activeFaction });
+      if (placed.length) this.events.emit("reinforce", { faction, units: placed, turn: this.turn });
+    }
+
+    endPhase() {
+      if (this.over) return { ok: false, reason: "game over" };
+      if (this.pendingAdvance) return { ok: false, reason: "advance pending" };
+      if (this.phase === "combat" && this.flag("mandatoryCombat")) {
+        const un = this.unresolvedCombat();
+        if (un.mustAttack.length || un.mustBeAttacked.length) {
+          return { ok: false, reason: "mandatory battles remain", unresolved: un };
+        }
+      }
+      if (this._checkVictory()) return { ok: true };
+      const skip = (this.def.rules || {}).skipPhase;
+      do {
+        this.phaseIndex++;
+        if (this.phaseIndex >= this.phases.length) {
+          // Advance to next faction, or next turn.
+          this.phaseIndex = 0;
+          this.sideIndex++;
+          if (this.sideIndex >= this.factions.length) {
+            this.sideIndex = 0;
+            this.turn++;
+            if (this.turn > this.maxTurns) { this._timeout(); return { ok: true }; }
+          }
+          this.events.emit("sideChange", { turn: this.turn, faction: this.activeFaction });
+        }
+      } while (skip && skip(this, this.phases[this.phaseIndex]));
       this._enterPhase();
+      return { ok: true };
     }
 
     /* ------------------------------ victory ------------------------------ */
@@ -368,15 +588,25 @@
         units: this.units.map((u) => ({
           id: u.id, faction: u.faction, type: u.type,
           q: u.q, r: u.r, alive: u.alive, moved: u.moved, acted: u.acted,
+          entered: u.entered, locked: u.locked, freshArrival: u.freshArrival,
         })),
         moveLog: this.moveLog.map((m) => ({
           unitId: m.unit.id, fromQ: m.fromQ, fromR: m.fromR,
         })),
+        attackedIds: [...this.attackedIds],
+        mustAttackIds: [...this.mustAttackIds],
+        mustBeAttackedIds: [...this.mustBeAttackedIds],
+        pendingAdvance: this.pendingAdvance
+          ? { hexes: this.pendingAdvance.hexes.map((h) => ({ q: h.q, r: h.r })),
+              faction: this.pendingAdvance.faction,
+              unitIds: [...this.pendingAdvance.unitIds] }
+          : null,
       };
     }
 
     // Rebuild a Game from serialize() output. Throws on anything that does not
     // match the def — a save from an edited scenario is discarded, not played.
+    // Fields introduced after a save was written default leniently.
     static restore(def, data) {
       const bad = (why) => { throw new Error("bad save: " + why); };
       if (!data || typeof data !== "object") bad("not an object");
@@ -400,16 +630,28 @@
         seen.add(su.id);
         if (u.faction !== su.faction || u.type !== su.type) bad("unit identity " + su.id);
         if (su.alive && !g.hex(su.q, su.r)) bad("unit off board " + su.id);
+        if (su.entered === false && (su.moved || su.acted)) bad("unentered unit acted " + su.id);
       }
       if (!Array.isArray(data.moveLog)) bad("moveLog");
       for (const m of data.moveLog) {
         if (!g.units[m.unitId]) bad("moveLog unit " + m.unitId);
       }
+      const idSet = (arr, what) => {
+        const s = new Set();
+        for (const id of arr || []) {
+          if (!g.units[id]) bad(what + " unit " + id);
+          s.add(id);
+        }
+        return s;
+      };
 
       for (const su of data.units) {
         const u = g.units[su.id];
         u.q = su.q; u.r = su.r;
         u.alive = !!su.alive; u.moved = !!su.moved; u.acted = !!su.acted;
+        u.entered = su.entered !== false; // absent in old saves -> on-map
+        u.locked = !!su.locked;
+        u.freshArrival = !!su.freshArrival;
       }
       g.turn = data.turn;
       g.sideIndex = data.sideIndex;
@@ -422,6 +664,29 @@
       g.moveLog = data.moveLog.map((m) => ({
         unit: g.units[m.unitId], fromQ: m.fromQ, fromR: m.fromR,
       }));
+      g.attackedIds = idSet(data.attackedIds, "attacked");
+      g.mustAttackIds = idSet(data.mustAttackIds, "mustAttack");
+      g.mustBeAttackedIds = idSet(data.mustBeAttackedIds, "mustBeAttacked");
+      // A pre-feature save restored mid-combat-phase has no obligation sets;
+      // recompute them from current positions (lenient, slightly forgiving).
+      if (data.mustAttackIds == null && g.phase === "combat") g._computeObligations();
+      if (data.pendingAdvance) {
+        const p = data.pendingAdvance;
+        if (!Array.isArray(p.hexes) || !p.hexes.length || !Array.isArray(p.unitIds)) bad("pendingAdvance");
+        for (const h of p.hexes) {
+          if (!g.hex(h.q, h.r)) bad("pendingAdvance hex off board");
+          if (g.unitAt(h.q, h.r)) bad("pendingAdvance hex occupied");
+        }
+        const units = idSet(p.unitIds, "pendingAdvance");
+        for (const id of units) {
+          const u = g.units[id];
+          if (!g.onMap(u) || u.faction !== p.faction) bad("pendingAdvance unit " + id);
+        }
+        g.pendingAdvance = { hexes: p.hexes.map((h) => ({ q: h.q, r: h.r })),
+                             faction: p.faction, unitIds: [...units] };
+      } else {
+        g.pendingAdvance = null;
+      }
       return g;
     }
   }
@@ -429,9 +694,11 @@
   // A generic victory helper games can reuse: eliminate the enemy, or (on timeout)
   // the faction owning the most objectives / still standing wins. Games usually
   // override this with their own scenario goal.
+  // NOTE: counts every living unit, including scheduled reinforcements that
+  // have not entered yet — an army is not "destroyed" while its reserves live.
   function defaultVictory(game, opts = {}) {
     for (const f of game.factions) {
-      if (game.living(f.id).length === 0) {
+      if (game.units.filter((u) => u.alive && u.faction === f.id).length === 0) {
         const other = game.factions.find((x) => x.id !== f.id);
         return { winner: other.id, reason: `${f.name} army destroyed` };
       }

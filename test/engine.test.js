@@ -10,7 +10,8 @@ const root = path.join(__dirname, "..");
 const ctx = { Math, JSON, console };
 ctx.window = undefined;                // force the "globalThis" branch
 vm.createContext(ctx);
-for (const f of ["src/hex.js", "src/engine.js", "games/ridge-assault.js"]) {
+for (const f of ["src/hex.js", "src/engine.js",
+                 "games/napoleon-at-war-common.js", "games/ridge-assault.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: f });
 }
 const { Hex, HexWar, RIDGE_ASSAULT } = ctx;
@@ -70,19 +71,25 @@ for (const nb of Hex.neighbors(anyEnemy)) {
 /* --- combat resolution + CRT --- */
 g.endPhase(); // move -> combat
 ok(g.phase === "combat", "advanced to combat phase");
-// Force a known 5:1 attack to guarantee a defender-loss result at die=6.
+// Put an attacker adjacent to the defender (explicit lists are validated
+// for range) and resolve at die=6.
 const def = g.enemiesOf("fr")[0];
-const atkList = [g.units.find((u) => u.faction === "fr")];
+const atk1 = g.units.find((u) => u.faction === "fr");
+{
+  const nb = Hex.neighbors(def).find((n) => g.hex(n.q, n.r) &&
+    g.terrain[g.hex(n.q, n.r).terrain].passable !== false && !g.unitAt(n.q, n.r));
+  Object.assign(atk1, nb);
+}
 const before = g.living("al").length;
 g.rng = () => 0.99; // die = 6
-const res = g.resolveCombat(def, atkList);
+const res = g.resolveCombat(def, [atk1]);
 ok(res.ok, "combat resolves");
 ok(["Ae", "Ar", "Ex", "NE", "Dr", "De"].includes(res.code), "valid CRT code: " + res.code);
 
 /* --- odds column mapping --- */
 ok(g.oddsColumn(10, 2) === "5:1", "10:2 -> 5:1 column");
 ok(g.oddsColumn(4, 4) === "1:1", "4:4 -> 1:1 column");
-ok(g.oddsColumn(1, 3) === "1:2", "weak attack clamps to 1:2");
+ok(g.oddsColumn(1, 3) === "1:3", "weak attack lands on the 1-3 column");
 
 /* --- ranged artillery: target eligibility --- */
 {
@@ -185,12 +192,13 @@ ok(g.oddsColumn(1, 3) === "1:2", "weak attack clamps to 1:2");
     const { t, D, art } = fresh();
     const inf = adjacent(t, "inf"); // west of D; the gun is east of D
     t.applyResult("Dr", D, [art, inf]);
-    ok(D.alive && Hex.distance(D, inf) === 3, "Dr retreats the defender away from the engaged unit");
+    ok(D.alive && Hex.distance(D, inf) === 2,
+       "Dr retreats the defender one hex, away from the engaged unit");
   }
   { // Dr, pure bombardment: falls back to retreating from the gun
     const { t, D, art } = fresh();
     t.applyResult("Dr", D, [art]);
-    ok(D.alive && Hex.distance(D, art) === 4, "Dr on a pure bombardment retreats from the gun");
+    ok(D.alive && Hex.distance(D, art) === 3, "Dr on a pure bombardment retreats from the gun");
   }
 }
 

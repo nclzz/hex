@@ -27,6 +27,9 @@
     border:1px solid var(--line); white-space:nowrap;}
   #sidePill{font-weight:800; padding:3px 10px; border-radius:10px; color:#fff; white-space:nowrap;}
   #phaseTxt{font-weight:600; opacity:.85;}
+  /* Demoralization ticker: eliminated Strength Points vs each army's level */
+  #demPill{font-size:11px; font-weight:700; padding:3px 8px; border-radius:10px;
+    background:var(--panel-d); border:1px solid var(--line); white-space:nowrap; opacity:.9;}
   #hud .spacer{flex:1;}
   #newBtn{font-size:12px; padding:5px 9px; border-radius:8px; border:1px solid var(--line);
     background:var(--panel-d); color:var(--ink); font-weight:600;}
@@ -56,6 +59,11 @@
   #undoBtn:active{transform:translateY(1px);}
   #undoBtn:disabled{opacity:.4;}
   #undoBtn.hidden{display:none;}
+  #attackBtn{height:44px; padding:0 14px; display:inline-flex; align-items:center;
+    font-size:15px; font-weight:800; border-radius:10px; border:none;
+    color:#fff; background:var(--red-d); white-space:nowrap;}
+  #attackBtn:active{transform:translateY(1px);}
+  #attackBtn.hidden{display:none;}
   #log{position:absolute; left:8px; right:8px; bottom:60px; text-align:center; pointer-events:none;}
   #log span{display:inline-block; background:rgba(20,18,14,.86); color:#fff; font-size:12.5px;
     padding:6px 12px; border-radius:14px; max-width:92%;}
@@ -87,6 +95,19 @@
   #passSide{display:inline-block; padding:6px 16px; border-radius:12px; color:#fff; font-weight:900; font-size:22px;}
 
   #cbOv{background:rgba(18,16,12,.55);}
+  /* Attacker toggle chips (Napoleon at War: the player groups the battle) */
+  #cbUnits{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px 0 2px;}
+  .cbChip{padding:6px 9px; border-radius:9px; border:1.5px solid var(--line);
+    background:var(--panel-d); color:var(--ink); font-weight:700; font-size:13px;}
+  .cbChip .r{font-weight:400; opacity:.7; font-size:11px;}
+  .cbChip.off{opacity:.38; border-style:dashed;}
+  /* Advance-after-combat prompt */
+  #advBox{margin-top:12px;}
+  #advBox .advLabel{font-size:13.5px; font-weight:700; text-align:center; margin-bottom:8px;}
+  #advBtns{display:flex; flex-wrap:wrap; gap:8px; justify-content:center;}
+  #advBtns button{padding:10px 14px; border-radius:10px; border:none; font-weight:800;
+    font-size:14px; color:#fff; background:var(--blue-d);}
+  #advBtns button.hold{background:#6b6355;}
   #cbCard{background:var(--panel); border:2px solid var(--line); border-radius:16px;
     padding:16px; width:min(340px,90vw); box-shadow:0 12px 40px rgba(0,0,0,.5);}
   #cbCard h3{margin:0 0 10px; font-size:17px; text-align:center;}
@@ -150,6 +171,7 @@
     <span id="turnPill">Turn 1/6</span>
     <span id="sidePill">FRENCH</span>
     <span id="phaseTxt">Movement</span>
+    <span id="demPill" hidden></span>
     <span class="spacer"></span>
     <button id="newBtn">New</button>
   </div>
@@ -183,16 +205,23 @@
     <!-- Combat overlay -->
     <div id="cbOv" class="overlay">
       <div id="cbCard">
-        <h3>Resolve Combat</h3>
-        <div class="cbRow"><span>Attackers (total CS)</span><span class="v" id="cbAtk">–</span></div>
-        <div class="cbRow"><span>Defender</span><span class="v" id="cbDef">–</span></div>
-        <div class="cbRow"><span>Terrain</span><span class="v" id="cbTer">–</span></div>
-        <div id="cbBomb" hidden>Units firing from range never suffer attacker losses or retreats.</div>
-        <div id="odds">– : –</div>
+        <h3 id="cbTitle">Resolve Combat</h3>
+        <div id="cbInfo">
+          <div class="cbRow"><span>Attackers (total CS)</span><span class="v" id="cbAtk">–</span></div>
+          <div class="cbRow"><span>Defender</span><span class="v" id="cbDef">–</span></div>
+          <div class="cbRow"><span>Terrain</span><span class="v" id="cbTer">–</span></div>
+          <div id="cbUnits" hidden></div>
+          <div id="cbBomb" hidden>Units firing from range never suffer attacker losses or retreats.</div>
+          <div id="odds">– : –</div>
+        </div>
         <div id="dieBox"></div>
         <div id="cbBtns">
           <button id="cancelBtn">Cancel</button>
           <button id="resolveBtn">Attack!</button>
+        </div>
+        <div id="advBox" hidden>
+          <div class="advLabel">A hex was cleared — advance into it?</div>
+          <div id="advBtns"></div>
         </div>
         <button id="contBtn">Continue</button>
       </div>
@@ -226,10 +255,17 @@
         <p><b>Goal.</b> <span id="helpBrief"></span></p>
         <p><b>Each turn</b> a side does <b>Movement</b> then <b>Combat</b>, then passes the phone.</p>
         <p><b>Move:</b> tap your unit, then tap a highlighted hex. Entering an enemy's
-        surrounding hexes (Zone of Control) stops the unit.</p>
-        <p><b>Fight:</b> in the Combat phase tap an enemy next to your units — Artillery (A)
-        can also fire from 2 hexes away. Every unit in range joins the attack; odds &amp; a die
-        decide the result. Units firing from range never suffer attacker losses or retreats.</p>
+        surrounding hexes (Zone of Control) stops the unit — and a unit that <b>starts</b>
+        its Movement next to an enemy is locked in place until the fight is decided.</p>
+        <p><b>Fight — combat is compulsory:</b> every enemy next to your units must be
+        attacked, and every one of your units next to an enemy must attack. Tap enemies to
+        group them into a battle (a unit touching two enemies attacks both at once), then
+        press <b>Attack</b> and choose which of your units join in. Artillery (A) may also
+        bombard from 2 hexes away — always voluntary, and guns firing from range never
+        suffer losses or retreats. Retreats are one hex; a unit with no safe hex to
+        retreat to is destroyed, and a victor may <b>advance</b> into the hex it clears.</p>
+        <p><b>Demoralization:</b> some battles track eliminated strength points per army —
+        reach an army's level and it breaks, ending the game at that instant.</p>
         <p><b>Get around:</b> <b>drag</b> to scroll the map, <b>pinch</b> (or scroll-wheel) to
         zoom. <b>Fit</b>, top right, shows the whole battlefield at once.</p>
         <p><b>Counters</b> show a letter (I/C/A/G) and <b>CS·MA</b> — combat strength &amp;
@@ -248,6 +284,7 @@
         <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H10"/>
       </svg>
     </button>
+    <button id="attackBtn" class="hidden">Attack</button>
     <button id="actBtn">End Movement</button>
   </div>
 </div>
@@ -256,9 +293,12 @@
 <script src="src/hex.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/renderer.js"></script>
-<!-- Game definitions (data on top of the engine); each registers itself -->
+<!-- The Napoleon at War common rules (a shared ruleset, not a scenario) -->
+<script src="games/napoleon-at-war-common.js"></script>
+<!-- Game definitions (data on top of the common rules); each registers itself -->
 <script src="games/ridge-assault.js"></script>
 <script src="games/sambre-crossing.js"></script>
+<script src="games/napoleon-at-waterloo.js"></script>
 <!-- Application glue (input, HUD, overlays) -->
 <script src="app.js"></script>
 </body>
