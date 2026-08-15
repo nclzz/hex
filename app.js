@@ -223,9 +223,26 @@
   // A tap selects/moves; a drag pans; two fingers (or the wheel) zoom. The tap
   // only commits on pointerup, once we know the pointer never became a drag.
   const TAP_SLOP = 10; // CSS px of travel still counted as a tap
+  const LONG_PRESS_MS = 500; // hold this long (without moving) to inspect a hex
   const pointers = new Map(); // pointerId -> {x,y}
   let drag = null;   // {id, downX, downY, lastX, lastY, moved}
   let pinch = null;  // {ids, dist, midX, midY}
+  let longPress = null; // {timer, fired} — pending press-and-hold inspection
+
+  function cancelLongPress() {
+    if (longPress) { clearTimeout(longPress.timer); longPress = null; }
+  }
+  // Open the inspector on the hex under (x,y) — the press-and-hold payoff.
+  function inspectAt(x, y) {
+    const hex = renderer && renderer.pick(game, x, y);
+    if (!hex) return false;
+    inspected = { q: hex.q, r: hex.r };
+    renderInspector(); draw();
+    if (global.navigator && global.navigator.vibrate) {
+      try { global.navigator.vibrate(15); } catch (e) { /* no haptics */ }
+    }
+    return true;
+  }
 
   function localPt(ev) {
     const r = canvas.getBoundingClientRect();
@@ -245,12 +262,18 @@
 
   canvas.addEventListener("pointerdown", (ev) => {
     if (boardBusy()) return;
+    if (ev.button != null && ev.button !== 0) return; // right/middle: contextmenu handles it
     const p = localPt(ev);
     pointers.set(ev.pointerId, p);
     try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* not captureable */ }
     if (pointers.size === 1) {
       drag = { id: ev.pointerId, downX: p.x, downY: p.y, lastX: p.x, lastY: p.y, moved: false };
+      cancelLongPress();
+      longPress = { fired: false, timer: setTimeout(() => {
+        if (longPress) { longPress.fired = true; inspectAt(p.x, p.y); }
+      }, LONG_PRESS_MS) };
     } else if (pointers.size === 2) {
+      cancelLongPress();
       startPinch();
     }
   });
@@ -272,7 +295,10 @@
       return;
     }
     if (drag && drag.id === ev.pointerId) {
-      if (!drag.moved && Math.hypot(p.x - drag.downX, p.y - drag.downY) > TAP_SLOP) drag.moved = true;
+      if (!drag.moved && Math.hypot(p.x - drag.downX, p.y - drag.downY) > TAP_SLOP) {
+        drag.moved = true;
+        cancelLongPress(); // a drag is a pan, not a hold
+      }
       if (drag.moved) { renderer.panByPixels(p.x - drag.lastX, p.y - drag.lastY); requestDraw(); }
       drag.lastX = p.x; drag.lastY = p.y;
     }
@@ -299,12 +325,23 @@
     const d = drag;
     if (d && d.id === ev.pointerId) {
       drag = null;
-      if (!d.moved && ev.type === "pointerup") commitTap(d.downX, d.downY);
+      const held = longPress && longPress.fired; // the hold already inspected
+      cancelLongPress();
+      if (!d.moved && !held && ev.type === "pointerup") commitTap(d.downX, d.downY);
       else syncFit();
     }
   }
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
+  // Desktop shortcut: right-click inspects the hex under the cursor (and the
+  // suppressed menu also keeps mobile long-press from popping a context menu).
+  canvas.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    if (boardBusy()) return;
+    const p = localPt(ev);
+    cancelLongPress();
+    inspectAt(p.x, p.y);
+  });
 
   canvas.addEventListener("wheel", (ev) => {
     if (boardBusy() || !renderer) return;
@@ -326,22 +363,25 @@
   }
 
   function onHex(q, r) {
-    inspected = { q, r }; // every board tap inspects the hex
+    // A plain tap plays the game; inspecting is press-and-hold (or
+    // right-click). Any tap dismisses an open inspector.
+    if (inspected) { inspected = null; renderInspector(); }
     const u = game.unitAt(q, r);
     if (game.phase === "move") {
       if (selected && reachable.has(global.Hex.key(q, r))) {
         game.moveUnit(selected, q, r);
         selected = null; reachable = new Map();
         focus({ q, r });
-        renderInspector(); draw(); syncSel(); syncUndo(); return;
+        draw(); syncSel(); syncUndo(); return;
       }
       if (u && game.canMove(u)) {
         selected = u; reachable = game.reachable(u); focus(u);
       } else {
-        // A locked or spent unit isn't an error — the inspector says why.
+        if (u && u.faction === game.activeFaction && u.locked)
+          flash("Locked in enemy ZOC — must stand and fight. (Hold a hex to inspect it.)");
         selected = null; reachable = new Map();
       }
-      renderInspector(); draw(); syncSel();
+      draw(); syncSel();
     } else { // combat: taps on enemies group the next battle
       if (u && u.faction !== game.activeFaction) {
         const i = targets.indexOf(u);
@@ -353,7 +393,7 @@
       } else if (!u) {
         targets = []; selected = null;
       }
-      renderInspector(); draw(); syncSel(); syncAttack();
+      draw(); syncSel(); syncAttack();
     }
   }
 
