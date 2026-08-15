@@ -64,7 +64,9 @@
     color:#fff; background:var(--red-d); white-space:nowrap;}
   #attackBtn:active{transform:translateY(1px);}
   #attackBtn.hidden{display:none;}
-  #log{position:absolute; left:8px; right:8px; bottom:60px; text-align:center; pointer-events:none;}
+  /* Toast lane: pinned to the top of the board (below the Fit/? buttons) so a
+     flash can never stack on the hex inspector in the bottom-left corner. */
+  #log{position:absolute; left:8px; right:8px; top:44px; text-align:center; pointer-events:none;}
   #log span{display:inline-block; background:rgba(20,18,14,.86); color:#fff; font-size:12.5px;
     padding:6px 12px; border-radius:14px; max-width:92%;}
 
@@ -81,6 +83,7 @@
   #hexInfo .hiObj{margin-top:4px; color:#f4d23a; font-weight:600;}
   #hexInfo .hiUnit{margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,.16); font-weight:600;}
   #hexInfo .hiUnit .tag{opacity:.7; font-weight:400; font-style:italic;}
+  #hexInfo .hiUnit .tag.warn{display:block; opacity:1; color:#f4c04a; font-style:normal; margin-top:2px;}
   #hexInfoClose{position:absolute; top:4px; right:5px; width:20px; height:20px; border:none;
     background:transparent; color:rgba(255,255,255,.75); font-size:16px; font-weight:800; line-height:1;}
 
@@ -268,6 +271,8 @@
         reach an army's level and it breaks, ending the game at that instant.</p>
         <p><b>Get around:</b> <b>drag</b> to scroll the map, <b>pinch</b> (or scroll-wheel) to
         zoom. <b>Fit</b>, top right, shows the whole battlefield at once.</p>
+        <p><b>Inspect:</b> <b>press and hold</b> a hex (right-click on desktop) to see its
+        terrain, its unit and why a unit can't move. Any tap dismisses the panel.</p>
         <p><b>Counters</b> show a letter (I/C/A/G) and <b>CS·MA</b> — combat strength &amp;
         movement. Artillery adds a third number — its range.</p>
         <p id="helpTerrain"></p>

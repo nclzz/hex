@@ -104,8 +104,10 @@ stouter towns (defense ×3), and their objective-based victory conditions.
 - Counters read **letter + `CS·MA`** — combat strength and movement
   allowance. Artillery adds a third number, its **range**. Prussian counters
   are slate-dark so the Allied player can tell their armies apart.
-- **Tap a hex** to inspect its terrain; the HUD's small pill tracks each
-  army's losses against its demoralization level.
+- **Press and hold a hex** (right-click on desktop) to inspect it — terrain,
+  its unit, and why a unit can't move; any tap dismisses the panel. The
+  HUD's small pill tracks each army's losses against its demoralization
+  level.
 
 ### Save & resume
 
