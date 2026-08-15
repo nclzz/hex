@@ -253,7 +253,11 @@
         if (!this._visible(c, size)) continue;
         this._hexPath(c, size * (h.scale || 0.94));
         if (h.fill) { ctx.fillStyle = h.fill; ctx.fill(); }
-        if (h.stroke) { ctx.lineWidth = h.lineWidth || 2; ctx.strokeStyle = h.stroke; ctx.stroke(); }
+        if (h.stroke) {
+          ctx.setLineDash(h.dash || []);
+          ctx.lineWidth = h.lineWidth || 2; ctx.strokeStyle = h.stroke; ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
 
       // units (reinforcements that have not entered the map yet don't exist)
