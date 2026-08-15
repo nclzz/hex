@@ -338,8 +338,7 @@
       if (u && game.canMove(u)) {
         selected = u; reachable = game.reachable(u); focus(u);
       } else {
-        if (u && u.faction === game.activeFaction && u.locked)
-          flash("Locked in an enemy Zone of Control — this unit must stand and fight.");
+        // A locked or spent unit isn't an error — the inspector says why.
         selected = null; reachable = new Map();
       }
       renderInspector(); draw(); syncSel();
@@ -389,12 +388,16 @@
     const u = game.unitAt(q, r);
     if (u) {
       const fac = factionById(u.faction), ut = game.typeOf(u);
-      let tag = "";
-      if (game.phase === "move" && u.faction === game.activeFaction && u.moved) tag = " (moved)";
-      else if (game.phase === "combat" && u.faction === game.activeFaction && u.acted) tag = " (attacked)";
+      let tag = "", tagClass = "tag";
+      if (game.phase === "move" && u.faction === game.activeFaction) {
+        if (u.locked) { tag = " Locked in enemy ZOC — must stand and fight."; tagClass = "tag warn"; }
+        else if (u.moved) tag = " (moved)";
+      } else if (game.phase === "combat" && u.faction === game.activeFaction && u.acted) {
+        tag = " (attacked)";
+      }
       unitEl.innerHTML = `${fac.name} ${ut.name} · CS ${ut.combat} · MA ${ut.move}` +
         ((ut.range || 1) > 1 ? ` · Range ${ut.range}` : "") +
-        (tag ? `<span class="tag">${tag}</span>` : "");
+        (tag ? `<span class="${tagClass}">${tag}</span>` : "");
       unitEl.hidden = false;
     } else unitEl.hidden = true;
 
