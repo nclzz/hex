@@ -471,6 +471,11 @@
   const Hx = () => global.Hex;
   const colLabel = (col) =>
     global.NAW_COMMON ? global.NAW_COMMON.columnLabel(col) : col;
+  // Rule [6.2] puts no floor on the announced ratio, and the engine honours
+  // that, but every column below even odds is strictly worse for the attacker
+  // — no result the higher columns can't already give, and Ae taking over —
+  // so the "Lower odds" control stops here.
+  const LOWER_FLOOR_COLUMN = "1:1";
 
   // Eligible attackers for a battle: every unacted friendly unit in range of
   // at least one of the defenders.
@@ -552,10 +557,12 @@
       const cols = game.def.crt.columns;
       column = game.oddsColumn(atk, def);
       let i = cols.indexOf(column);
-      pending.lower = Math.min(pending.lower, i); // never below the lowest column
+      const floor = Math.max(0, cols.indexOf(LOWER_FLOOR_COLUMN));
+      // never below even odds — and nothing to lower if we start there or worse
+      pending.lower = Math.max(0, Math.min(pending.lower, i - floor));
       i -= pending.lower;
       column = cols[i];
-      canLower = i > 0;
+      canLower = i > floor;
     }
     $("odds").textContent = valid
       ? colLabel(column) + (pending.lower ? " (lowered)" : "")
