@@ -48,32 +48,45 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
 1 Strength Point ≈ 500–1,000 men, 1 game-turn ≈ 1–2 hours):
 
 - **Sequence of play.** Alternating player-turns, each a **Movement Phase**
-  then a **Combat Phase**. (Night game-turns, where a scenario has them, skip
-  the Combat Phase.)
-- **Movement & Zones of Control.** Terrain costs movement points; entering
-  the six hexes around an enemy unit (its ZOC) stops a unit dead — and a unit
-  that **starts** its Movement Phase in an enemy ZOC is locked in place. The
-  only ways out are winning, retreating, or dying.
+  then a **Combat Phase**. Night game-turns have no Combat Phase at all, and
+  at night nobody may even enter an enemy ZOC.
+- **Movement & Zones of Control.** Terrain costs movement points; friendly
+  units are moved *through* freely (never ended upon); entering the six
+  hexes around an enemy unit (its ZOC) stops a unit dead — and a unit that
+  **starts** its Movement Phase in an enemy ZOC is locked in place. The only
+  ways out are winning, retreating, or dying.
+- **Terrain (the official key).** Clear costs 1 MP; **woods are prohibited
+  to movement** and block artillery lines of sight; **Woods-Road** hexes may
+  be entered or exited only through a road hexside; **buildings double the
+  defender**. Roads move you at **½ MP per hex** (trails at 1), streams cost
+  +2 MP to cross, and **rivers** can be crossed only at bridges — an
+  unbridged river hexside also blocks ZOCs and all combat except
+  bombardment.
 - **Combat is compulsory.** Every enemy unit adjacent to your units must be
   attacked, and every one of your units adjacent to an enemy must attack —
   each unit once per phase, each defender attacked once. You choose the
   groupings: tap enemies to build a battle (a unit touching two enemies
   attacks both at once as a combined defense), then pick which of your units
   join. The phase will not end while a fightable mandatory battle waits.
-- **The CRT.** Total attacking CS against total defending CS × terrain,
-  rounded down to a column (1-3 … 5-1); one die. Results: **Ae** (all engaged
-  attackers eliminated), **Ar** (engaged attackers retreat), **Ex** (defender
-  eliminated, attacker loses at least as many strength points from engaged
-  units), **Dr** (defender retreats), **De** (defender eliminated). Worse than
-  1-3 is an automatic Ae; better than 5-1 an automatic De. There is no
-  "no effect" — every battle bites.
-- **Retreats are one hex,** and strict: a unit that would retreat into an
-  enemy ZOC, an occupied hex or impassable terrain is eliminated instead.
+- **The CRT** (the official chart). Total attacking CS against total
+  defending CS × terrain, rounded down to a column (1-5 … 6-1); one die.
+  Results: **Ae** (all engaged attackers eliminated), **Ar** (engaged
+  attackers retreat), **Ex** (defender eliminated, attacker loses at least
+  as many strength points from engaged units), **Dr** (defender retreats),
+  **De** (defender eliminated). Attacks worse than 1-5 are treated as 1-5,
+  better than 6-1 as 6-1. There is no "no effect" — every battle bites.
+- **Retreats are one hex,** never into an enemy ZOC. A retreater with no
+  vacant hex **displaces** a friendly neighbour, who retreats in turn (chains
+  allowed); only when nobody can make room does the retreater die — and a
+  displaced, unfired artillery unit loses its shot for the phase.
 - **Advance after combat.** When a hex is vacated by combat, one victorious
-  engaged unit may immediately advance into it, ignoring ZOCs.
+  unit — the attacker's or, after Ar/Ae, the **defender's** — may immediately
+  advance into it, ignoring ZOCs.
 - **Artillery** may bombard up to **two hexes** away. Bombardment is
-  voluntary, and guns firing from range are never touched by the result —
-  only adjacent attackers pay.
+  voluntary, never allowed from inside an enemy ZOC, and needs a clear **line
+  of sight** — woods and towns block it (a shot along a hexside is spoiled
+  only if both flanking hexes block). Guns firing from range are never
+  touched by the result — only adjacent attackers pay.
 - **Demoralization.** Scenarios can give each army a Demoralization Level;
   when its cumulative eliminated strength points reach it, the army breaks and
   the game ends at that instant (the HUD tracks it live).
@@ -87,11 +100,17 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
 - French demoralization at 40 SP, Anglo-Allied at 26. Breaking the Prussians
   (12 SP) doesn't end the game — it *raises the French level by 10*.
   Prussian losses never count against the Anglo-Allied army.
-- The French also win at the instant they hold the Mont-Saint-Jean
-  crossroads (★). At nightfall (end of Turn 10), the Allies have held.
+- The French also win at the instant they hold Mont-Saint-Jean (★). At
+  nightfall (end of Turn 10), the Allies have held.
+- The 27×22 map follows the published NAW Waterloo map: open farmland, the
+  villages in their historical places, the Bois de Paris on the eastern
+  flank, and the yellow road net (the Brussels highway, the Nivelles road,
+  the lateral to Braine-l'Alleud, the eastern road by Ohain) as ½-MP road
+  hexsides.
 
 The other two scenarios keep their own exclusive content — maps, armies and
-their objective-based victory conditions — on the same standard terrain chart.
+their objective-based victory conditions — on the same standard terrain
+chart. Sambre Crossing's river is a true hexside river with three bridges.
 
 ## How to play (the app)
 
@@ -199,21 +218,24 @@ the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 
 ## Fidelity notes
 
-The mechanics above follow the HexWar wiki's Standard Rules and the Waterloo
-Exclusive Rules. A few data values could not be checked against the wiki from
-the environment this was built in (the site was unreachable) and are careful
-**reconstructions** of the SPI system — all plain data, one place each, easy
-to true up against the published charts:
+The mechanics are implemented from the published **Napoleon At War Standard
+Rules text** (sections 4.0–10.0: sequence, movement incl. friendly
+pass-through and hexside costs, Zones of Control incl. rivers, mandatory and
+multi-hex combat, retreats with displacement, advances for either victor,
+the artillery rules with Line of Sight, and night game-turns). The
+**Combat Results Table and the Terrain Key are the official charts**
+(clear / woods-prohibited / road-bound Woods-Road / doubling buildings),
+and the Waterloo map is drawn from the published game map. Still
+**reconstructions**, all plain data in one place each:
 
-- the individual **CRT cell values** (`games/napoleon-at-war-common.js`) —
-  correct in shape (columns, result mix, monotone in odds and die), not
-  guaranteed cell-for-cell;
-- the common **terrain chart** numbers (same file);
+- the **Slope and Marsh** terrain values
+  (`games/napoleon-at-war-common.js`) — used by the two non-Waterloo
+  scenarios, not part of the game's key;
 - the Waterloo **order of battle** and **demoralization levels**
   (`games/napoleon-at-waterloo.js`), sized to the series' scale.
 
-Documented simplifications of the printed rules: the retreat hex and the
-Exchange losses are auto-picked (farthest-from-enemy / weakest-first) rather
-than chosen by the owning player; one advance per combat when several hexes
-are vacated; the defender's advance after an Ae/Ar is not offered yet; and
-reinforcements auto-place on the first free entry hex instead of asking.
+Documented simplifications of the printed rules: the retreat/displacement
+hex and the Exchange losses are auto-picked (farthest-from-enemy /
+weakest-first) rather than chosen by the owning player; one advance per
+combat when several hexes are vacated; and reinforcements auto-place on the
+first free entry hex instead of asking.

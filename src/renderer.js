@@ -243,7 +243,18 @@
         ctx.fillStyle = this.terrainColor(game, hex);
         ctx.fill();
         ctx.lineWidth = 1; ctx.strokeStyle = "rgba(60,52,36,.55)"; ctx.stroke();
-        if (this.decorateHex) this.decorateHex(ctx, game, hex, c, size);
+      }
+
+      // hexside features (roads under, waterways over)
+      this._drawEdges(game);
+
+      // hex decorations (objective stars, …) sit above roads
+      if (this.decorateHex) {
+        for (const [, hex] of game.board) {
+          const c = L.center(hex);
+          if (!this._visible(c, size)) continue;
+          this.decorateHex(ctx, game, hex, c, size);
+        }
       }
 
       // highlights (movement range, targets, …)
@@ -274,6 +285,67 @@
         this._hexPath(c, size * 0.99);
         ctx.lineWidth = 3; ctx.strokeStyle = "#f4d23a"; ctx.stroke();
       }
+    }
+
+    // Hexside features from game.edges ("q,r|q,r" -> type). Roads and trails
+    // run centre-to-centre beneath everything; rivers, streams, bridges and
+    // slope marks sit on the shared edge itself.
+    _drawEdges(game) {
+      if (!game.edges || !game.edges.size) return;
+      const ctx = this.ctx, L = this.layout, size = L.size;
+      ctx.save();
+      ctx.lineCap = "round";
+      const centers = (key) => {
+        const [k1, k2] = key.split("|");
+        const A = Hex.parseKey(k1), B = Hex.parseKey(k2);
+        return [L.center(A), L.center(B)];
+      };
+      // pass 1: roads/trails
+      for (const [key, type] of game.edges) {
+        if (type !== "road" && type !== "trail") continue;
+        const [ca, cb] = centers(key);
+        if (!this._visible(ca, size) && !this._visible(cb, size)) continue;
+        ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y);
+        ctx.lineWidth = size * (type === "road" ? 0.22 : 0.12);
+        ctx.strokeStyle = type === "road" ? "#d8b95c" : "#c9b47e";
+        ctx.stroke();
+      }
+      // pass 2: edge features
+      for (const [key, type] of game.edges) {
+        if (type === "road" || type === "trail") continue;
+        const [ca, cb] = centers(key);
+        if (!this._visible(ca, size) && !this._visible(cb, size)) continue;
+        const mx = (ca.x + cb.x) / 2, my = (ca.y + cb.y) / 2;
+        const dx = cb.x - ca.x, dy = cb.y - ca.y;
+        const dl = Math.hypot(dx, dy) || 1;
+        const px = -dy / dl, py = dx / dl; // along the shared edge
+        const half = size * 0.5;
+        if (type === "river" || type === "stream" || type === "bridge") {
+          ctx.beginPath();
+          ctx.moveTo(mx - px * half, my - py * half);
+          ctx.lineTo(mx + px * half, my + py * half);
+          ctx.lineWidth = size * (type === "stream" ? 0.14 : 0.26);
+          ctx.strokeStyle = type === "stream" ? "#7aa7c4" : "#4a7fa8";
+          ctx.stroke();
+          if (type === "bridge") {
+            ctx.beginPath();
+            const bl = size * 0.3;
+            ctx.moveTo(mx - (dx / dl) * bl, my - (dy / dl) * bl);
+            ctx.lineTo(mx + (dx / dl) * bl, my + (dy / dl) * bl);
+            ctx.lineWidth = size * 0.24;
+            ctx.strokeStyle = "#8a6b3d";
+            ctx.stroke();
+          }
+        } else if (type === "slope") {
+          ctx.beginPath();
+          ctx.moveTo(mx - px * half * 0.8, my - py * half * 0.8);
+          ctx.lineTo(mx + px * half * 0.8, my + py * half * 0.8);
+          ctx.lineWidth = size * 0.1;
+          ctx.strokeStyle = "rgba(150,110,60,.8)";
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     // Screen point (relative to canvas) -> hex, or null.

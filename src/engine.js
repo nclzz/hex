@@ -25,11 +25,14 @@
        unitTypes: { key:  {name,glyph,combat,move,range?, ...custom} },  // range defaults to 1
        factions:  [{ id,name,short,color,dark }],
        map:       ["...rows of terrain codes..."],
+       hexsides:  [{ type: "river"|"bridge"|"stream"|"slope"|"road"|"trail",
+                     pairs: [[[c,r],[c,r]], ...] }],   // optional edge features
        objectives:[{col,row,owner}] (optional, for victory helpers),
        setup:     [{ faction, army?, units:[[col,row,typeKey], ...] }],
        reinforcements: [{ turn, faction, army?, entry:[[col,row],...],
                           units:["typeKey", ...] }],   // optional, scheduled arrivals
        demoralization: { armyOrFactionId: level },     // optional, read by victory()
+       nightTurns:[n, ...],                   // optional: no combat, no ZOC entry
        phases:    ["move","combat"],          // per-faction, in order
        maxTurns:  number,
        crt:       { "columns":[...], table:{col:[6 results]} },   // REQUIRED
@@ -52,6 +55,12 @@
   ------------------------------------------------------------------------ */
 
   const RESULT_CODES = ["Ae", "Ar", "Ex", "Dr", "De"];
+
+  // Canonical key for the edge between two hexes (order-independent).
+  const edgeKey = (a, b) => {
+    const ka = Hex.key(a.q, a.r), kb = Hex.key(b.q, b.r);
+    return ka < kb ? ka + "|" + kb : kb + "|" + ka;
+  };
 
   class Game {
     constructor(def) {
@@ -82,6 +91,15 @@
           if (code === " ") continue; // allow ragged maps
           const a = Hex.offsetToAxial(col, row, this.offsetMode);
           this.board.set(Hex.key(a.q, a.r), { q: a.q, r: a.r, terrain: code, col, row });
+        }
+      }
+      // Hexside features: edge key -> type [5.22-5.26]
+      this.edges = new Map();
+      for (const grp of (this.def.hexsides || [])) {
+        for (const [p1, p2] of grp.pairs) {
+          const a = Hex.offsetToAxial(p1[0], p1[1], this.offsetMode);
+          const b = Hex.offsetToAxial(p2[0], p2[1], this.offsetMode);
+          this.edges.set(edgeKey(a, b), grp.type);
         }
       }
       // Objectives
@@ -145,6 +163,31 @@
     combat(u) { return this.typeOf(u).combat; }
     move(u) { return this.typeOf(u).move; }
     range(u) { return this.typeOf(u).range || 1; }
+    edgeBetween(a, b) { return this.edges.get(edgeKey(a, b)); }
+    // Melee contact: adjacency, except through an unbridged river hexside —
+    // no ZOC [6.6] and no normal combat [8.45] ever cross one.
+    meleeAdjacent(a, b) {
+      return Hex.distance(a, b) === 1 && this.edgeBetween(a, b) !== "river";
+    }
+    // Tinted game-turns: no Combat Phase [10.1], no entering enemy ZOC [10.2].
+    isNight(turn) { return !!(this.def.nightTurns || []).includes(turn == null ? this.turn : turn); }
+    // Bombardment Line of Sight [8.3]: for a two-hex shot the intervening
+    // hexes are the common neighbors of firer and target — one hex on a
+    // straight line, two when the line runs along a hexside, in which case
+    // BOTH must block to spoil the shot [8.32]. Firer/target hexes and
+    // units never block [8.34/8.35]. Terrain with `losBlock` blocks [8.33].
+    lineOfSight(from, to) {
+      if (Hex.distance(from, to) <= 1) return true;
+      const nbTo = new Set(Hex.neighbors(to).map((n) => Hex.key(n.q, n.r)));
+      const between = Hex.neighbors(from).filter((n) => nbTo.has(Hex.key(n.q, n.r)));
+      const blocks = (n) => {
+        const t = this.terrainAt(n.q, n.r);
+        return !!(t && t.losBlock);
+      };
+      if (between.length === 0) return true;
+      if (between.length === 1) return !blocks(between[0]);
+      return !(blocks(between[0]) && blocks(between[1]));
+    }
 
     // Cumulative eliminated Strength Points — derived, nothing to serialize.
     // `army` narrows to a tagged army within the faction (e.g. Prussians).
@@ -161,11 +204,13 @@
       return r[name] ? r[name].bind(null) : fallback;
     }
 
-    // Zone of Control: a hex is in `faction`'s enemies' ZOC if adjacent to an enemy unit.
+    // Zone of Control: a hex is in `faction`'s enemies' ZOC if adjacent to an
+    // enemy unit — but ZOC never extends through an unbridged river hexside [6.6].
     isEnemyZOC(faction, q, r) {
       const custom = (this.def.rules || {}).isZOC;
       if (custom) return custom(this, faction, { q, r });
       for (const nb of Hex.neighbors({ q, r })) {
+        if (this.edgeBetween({ q, r }, nb) === "river") continue;
         const u = this.unitAt(nb.q, nb.r);
         if (u && u.faction !== faction) return true;
       }
@@ -177,7 +222,21 @@
       if (custom) return custom(this, unit, fromHex, toHex);
       const t = this.terrainAt(toHex.q, toHex.r);
       if (!t || t.passable === false) return Infinity;
-      return t.moveCost;
+      const edge = this.edgeBetween(fromHex, toHex);
+      if (edge === "river") return Infinity; // crossable only at bridges [5.24]
+      // Woods-Road hexes may be entered or exited only through a hexside
+      // crossed by a road (Terrain Key).
+      const ft0 = this.terrainAt(fromHex.q, fromHex.r);
+      if (((ft0 && ft0.roadOnly) || t.roadOnly) && edge !== "road") return Infinity;
+      if (edge === "road") return 0.5;       // regardless of terrain [5.22]
+      if (edge === "trail") return 1;        // regardless of terrain [5.23]
+      let cost = t.moveCost;                 // bridge: no surcharge [5.24]
+      if (edge === "stream") cost += 2;      // [5.25]
+      if (edge === "slope") {                // +1 leaving a slope hex downhill [5.26]
+        const ft = this.terrainAt(fromHex.q, fromHex.r);
+        if (ft && ft.slope && !t.slope) cost += 1;
+      }
+      return cost;
     }
 
     canStandOn(unit, hex) {
@@ -192,19 +251,29 @@
     /* ----------------------------- movement ------------------------------ */
     reachable(unit) {
       const faction = unit.faction;
+      const night = this.isNight();
       // A freshly arrived reinforcement has already paid 1 MP for its entry hex.
       const budget = this.move(unit) - (unit.freshArrival ? 1 : 0);
-      return Hex.reachable({
+      const reach = Hex.reachable({
         start: { q: unit.q, r: unit.r },
         budget,
         neighborsOf: (h) => Hex.neighbors(h).filter((n) => this.board.has(Hex.key(n.q, n.r))),
         stepCost: (from, to) => {
-          if (this.unitAt(to.q, to.r)) return Infinity; // blocked by any unit
+          const occ = this.unitAt(to.q, to.r);
+          if (occ && occ.faction !== faction) return Infinity; // never enter enemy hexes [5.12]
+          // friendly-occupied hexes are passed through at normal cost [5.31/5.33]
+          if (night && this.isEnemyZOC(faction, to.q, to.r)) return Infinity; // [10.2]
           return this.stepCost(unit, this.hex(from.q, from.r), this.hex(to.q, to.r));
         },
         blocked: (h) => !this.board.has(Hex.key(h.q, h.r)),
-        stopAt: (h) => this.isEnemyZOC(faction, h.q, h.r), // ZOC halts movement
+        stopAt: (h) => this.isEnemyZOC(faction, h.q, h.r), // ZOC halts movement [6.0]
       });
+      // A unit may end a phase only in an empty hex [5.32] — occupied hexes
+      // were path, not destination.
+      for (const [k, cell] of reach) {
+        if (this.unitAt(cell.q, cell.r)) reach.delete(k);
+      }
+      return reach;
     }
 
     canMove(unit) {
@@ -235,11 +304,21 @@
     }
 
     /* ------------------------------ combat ------------------------------- */
-    // All active-faction units within attack range of `defender` (1 unless the
-    // unit type sets `range`) that haven't acted this phase.
+    // All active-faction units that could attack `defender` this phase:
+    // melee contact at distance 1 (never across an unbridged river [8.45]),
+    // or bombardment within range — which requires a clear Line of Sight
+    // [8.3] and a firing unit NOT in an enemy ZOC [8.41]. A gun adjacent
+    // only across a river still fires per the bombardment rules [8.45].
     attackersFor(defender) {
-      return this.units.filter((u) => this.onMap(u) && u.faction === this.activeFaction &&
-        !u.acted && Hex.distance(u, defender) <= this.range(u));
+      return this.units.filter((u) => {
+        if (!this.onMap(u) || u.faction !== this.activeFaction || u.acted) return false;
+        const d = Hex.distance(u, defender);
+        if (d < 1 || d > Math.max(1, this.range(u))) return false;
+        if (this.meleeAdjacent(u, defender)) return true;
+        if (this.range(u) < 2) return false; // river-adjacent foot may not fight across
+        if (this.isEnemyZOC(u.faction, u.q, u.r)) return false;   // [8.41]
+        return this.lineOfSight(u, defender);                     // [8.3]
+      });
     }
 
     attackerStrength(list) {
@@ -278,23 +357,50 @@
       return 1 + Math.floor(this.rng() * 6);
     }
 
-    // Retreat a unit `steps` hexes away from `threat`. Returns false if impossible.
-    retreat(unit, threat, steps, avoidZOC) {
-      for (let s = 0; s < steps; s++) {
-        let best = null, bestD = -1;
-        for (const nb of Hex.neighbors(unit)) {
-          const h = this.hex(nb.q, nb.r);
-          if (!h) continue;
-          if (this.unitAt(nb.q, nb.r)) continue;
-          if (this.terrain[h.terrain].passable === false) continue;
-          if (avoidZOC && this.isEnemyZOC(unit.faction, nb.q, nb.r)) continue;
-          const d = Hex.distance(nb, threat);
-          if (d > bestD) { bestD = d; best = nb; }
-        }
-        if (!best) return false;
-        unit.q = best.q; unit.r = best.r;
+    // Retreat `unit` one hex so it is no longer enemy-controlled [7.71].
+    // Legal hexes: on-map, passable, not across a prohibited hexside, not in
+    // an enemy ZOC and never enemy-occupied [7.72]. Vacant hexes come first
+    // [7.73] (auto-picked farthest from the threat — a documented
+    // simplification of owner choice); with no vacant hex the unit DISPLACES
+    // a friendly occupant, which retreats in turn — chains allowed [7.8]. If
+    // nobody can be placed, returns false and the caller eliminates the
+    // RETREATER, never the displaced units [7.82/7.72]. A displaced
+    // artillery unit that has not fought loses its fire for the phase [7.82].
+    retreat(unit, threat, _depth) {
+      const depth = _depth || 0;
+      if (depth > 8) return false; // chain sanity bound
+      const from = this.hex(unit.q, unit.r);
+      const options = [];
+      for (const nb of Hex.neighbors(unit)) {
+        const h = this.hex(nb.q, nb.r);
+        if (!h) continue;
+        // prohibited hexes and hexsides bind retreats exactly like movement
+        // (impassable terrain, rivers, road-bound Woods-Road hexes) [7.72]
+        if (!Number.isFinite(this.stepCost(unit, from, h))) continue;
+        if (this.isEnemyZOC(unit.faction, nb.q, nb.r)) continue;   // [7.71/7.72]
+        const occ = this.unitAt(nb.q, nb.r);
+        if (occ && occ.faction !== unit.faction) continue;         // [5.12]
+        options.push({ nb, occ });
       }
-      return true;
+      const byDist = (a, b) => Hex.distance(b.nb, threat) - Hex.distance(a.nb, threat);
+      const vacant = options.filter((o) => !o.occ).sort(byDist);
+      if (vacant.length) {
+        unit.q = vacant[0].nb.q; unit.r = vacant[0].nb.r;
+        return true;
+      }
+      // Displacement — only when no vacant path exists [7.81].
+      for (const o of options.filter((x) => x.occ).sort(byDist)) {
+        const saved = { q: o.occ.q, r: o.occ.r };
+        if (this.retreat(o.occ, threat, depth + 1)) {
+          unit.q = o.nb.q; unit.r = o.nb.r;
+          if (this.phase === "combat" && this.range(o.occ) > 1 && !o.occ.acted) {
+            o.occ.acted = true; // displaced artillery may not fire this phase [7.82]
+          }
+          return true;
+        }
+        o.occ.q = saved.q; o.occ.r = saved.r; // failed chain: roll back
+      }
+      return false;
     }
 
     // Result application — the Napoleon at War semantics. `defenders` may
@@ -310,7 +416,7 @@
       defenders = Array.isArray(defenders) ? defenders : [defenders];
       const custom = (this.def.rules || {}).applyResult;
       if (custom) return custom(this, code, defenders, attackers);
-      const engaged = attackers.filter((a) => defenders.some((d) => Hex.distance(a, d) === 1));
+      const engaged = attackers.filter((a) => defenders.some((d) => this.meleeAdjacent(a, d)));
       const threat = engaged[0] || attackers[0];
       const kill = (u) => { u.alive = false; };
       switch (code) {
@@ -320,7 +426,7 @@
         case "Dr": {
           let trapped = false;
           for (const d of defenders) {
-            if (!this.retreat(d, threat, 1, true)) { kill(d); trapped = true; }
+            if (!this.retreat(d, threat)) { kill(d); trapped = true; }
           }
           return trapped ? "No retreat possible — defender eliminated" : "Defender retreats";
         }
@@ -337,7 +443,7 @@
           if (!engaged.length) return "Bombardment driven off — guns unharmed";
           let lost = false;
           for (const a of engaged) {
-            if (!this.retreat(a, defenders[0], 1, true)) { kill(a); lost = true; }
+            if (!this.retreat(a, defenders[0])) { kill(a); lost = true; }
           }
           return lost ? "Attackers repulsed — the trapped are lost" : "Attackers retreat";
         }
@@ -374,15 +480,24 @@
         for (const a of attackers) {
           if (!this.onMap(a) || a.faction !== this.activeFaction || a.acted)
             return { ok: false, reason: "invalid attacker" };
-          if (!defenders.some((d) => Hex.distance(a, d) <= this.range(a)))
-            return { ok: false, reason: "attacker out of range" };
+          // Melee contact with any defender qualifies; otherwise the unit is
+          // bombarding and needs range + LOS to at least one defending hex
+          // [8.22], from outside any enemy ZOC [8.41].
+          if (!defenders.some((d) => this.meleeAdjacent(a, d))) {
+            if (this.isEnemyZOC(a.faction, a.q, a.r))
+              return { ok: false, reason: "artillery in an enemy ZOC may not bombard" };
+            const canFire = defenders.some((d) =>
+              Hex.distance(a, d) <= this.range(a) && this.lineOfSight(a, d));
+            if (!canFire) return { ok: false, reason: "no range or line of sight" };
+          }
         }
       }
       // In a combined battle every defender must be engaged by an adjacent
-      // attacker; only a single-defender battle may be a pure bombardment.
+      // attacker [7.21]; only a single-defender battle may be a pure
+      // bombardment [8.13].
       if (defenders.length > 1) {
         for (const d of defenders) {
-          if (!attackers.some((a) => Hex.distance(a, d) === 1))
+          if (!attackers.some((a) => this.meleeAdjacent(a, d)))
             return { ok: false, reason: "defender not engaged" };
         }
       }
@@ -392,20 +507,31 @@
       const die = this.rollDie();
       const code = this.def.crt.table[column][die - 1];
       const defHexes = defenders.map((d) => ({ q: d.q, r: d.r }));
+      const atkHexes = attackers.map((a) => ({ q: a.q, r: a.r }));
       const note = this.applyResult(code, defenders, attackers);
       attackers.forEach((a) => { if (a.alive) a.acted = true; });
       defenders.forEach((d) => this.attackedIds.add(d.id));
-      // Advance after combat: hexes the defenders no longer hold may be
-      // claimed by ONE surviving engaged attacker, immediately.
+      // Advance after combat [7.74/7.75]: whenever a hex is vacated by the
+      // combat, ONE victorious participating unit may claim it, immediately.
+      // Defender hexes vacated -> an engaged attacker advances; attacker
+      // hexes vacated (Ar/Ae) -> a surviving DEFENDER may advance instead.
       let advance = null;
       {
-        const hexes = defHexes.filter((h) => !this.unitAt(h.q, h.r));
-        const unitIds = attackers
-          .filter((a) => a.alive && hexes.some((h) => Hex.distance(a, h) === 1))
-          .map((a) => a.id);
+        const empty = (h) => !this.unitAt(h.q, h.r);
+        let hexes = defHexes.filter(empty);
+        let side = this.activeFaction;
+        let winners = attackers;
+        if (!hexes.length) {
+          hexes = atkHexes.filter(empty);
+          side = defenders[0].faction;
+          winners = defenders;
+        }
+        const unitIds = winners
+          .filter((u) => u.alive && hexes.some((h) => this.meleeAdjacent(u, h)))
+          .map((u) => u.id);
         if (hexes.length && unitIds.length) {
-          this.pendingAdvance = { hexes, faction: this.activeFaction, unitIds };
-          advance = { hexes, candidates: unitIds.map((i) => this.units[i]) };
+          this.pendingAdvance = { hexes, faction: side, unitIds };
+          advance = { hexes, faction: side, candidates: unitIds.map((i) => this.units[i]) };
         }
       }
       const result = { ok: true, attackers, defenders, defender: defenders[0],
@@ -427,7 +553,11 @@
         : p.hexes.find((h) => h.q === q && h.r === r);
       if (!hx) return { ok: false, reason: "not a vacated hex" };
       if (this.unitAt(hx.q, hx.r)) return { ok: false, reason: "hex occupied" };
-      if (Hex.distance(unit, hx) !== 1) return { ok: false, reason: "unit not adjacent" };
+      if (!this.meleeAdjacent(unit, hx)) return { ok: false, reason: "unit not adjacent" };
+      // The step itself must be crossable (no rivers, no road-bound woods
+      // without the road) — advances ignore only ZOCs [7.74].
+      if (!Number.isFinite(this.stepCost(unit, this.hex(unit.q, unit.r), this.hex(hx.q, hx.r))))
+        return { ok: false, reason: "hexside prohibited" };
       unit.q = hx.q; unit.r = hx.r;
       this.pendingAdvance = null;
       this.events.emit("advance", { unit });
@@ -452,6 +582,7 @@
       const faction = this.activeFaction;
       for (const u of this.living(faction)) {
         for (const nb of Hex.neighbors(u)) {
+          if (!this.meleeAdjacent(u, nb)) continue; // no contact across rivers [6.6]
           const e = this.unitAt(nb.q, nb.r);
           if (e && e.faction !== faction) {
             this.mustAttackIds.add(u.id);
@@ -477,6 +608,7 @@
         const u = this.units[id];
         if (!this.onMap(u) || u.acted) continue;
         const hasTarget = Hex.neighbors(u).some((nb) => {
+          if (!this.meleeAdjacent(u, nb)) return false;
           const e = this.unitAt(nb.q, nb.r);
           return e && e.faction !== faction && !this.attackedIds.has(e.id);
         });
@@ -541,6 +673,11 @@
       }
       if (this._checkVictory()) return { ok: true };
       const skip = (this.def.rules || {}).skipPhase;
+      const skipped = () => {
+        const ph = this.phases[this.phaseIndex];
+        if (ph === "combat" && this.isNight()) return true; // no combat at night [10.1]
+        return !!(skip && skip(this, ph));
+      };
       do {
         this.phaseIndex++;
         if (this.phaseIndex >= this.phases.length) {
@@ -554,7 +691,7 @@
           }
           this.events.emit("sideChange", { turn: this.turn, faction: this.activeFaction });
         }
-      } while (skip && skip(this, this.phases[this.phaseIndex]));
+      } while (skipped());
       this._enterPhase();
       return { ok: true };
     }

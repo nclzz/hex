@@ -80,6 +80,7 @@ const roundtrip = (g) => JSON.parse(JSON.stringify(g.serialize()));
   }
   const res = g.resolveCombat(def, atk);
   ok(res.ok, "setup: combat resolved");
+  if (g.pendingAdvance) g.declineAdvance(); // settle the advance before saving
 
   const r = Game.restore(RIDGE_ASSAULT, roundtrip(g));
   ok(r.phase === "combat", "combat phase survives");

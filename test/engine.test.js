@@ -124,11 +124,13 @@ ok(g.oddsColumn(1, 3) === "1:3", "weak attack lands on the 1-3 column");
   const art = gr.units.find((u) => u.faction === "fr" && u.type === "art");
   const inf = gr.units.find((u) => u.faction === "fr" && u.type === "inf");
   Object.assign(D, at(4, 7)); Object.assign(art, at(2, 7)); Object.assign(inf, at(3, 7));
+  gr.rng = () => 0.7; // die = 5
   const res = gr.resolveCombat(D); // attackers auto-gathered
   ok(res.ok && res.attackers.includes(art) && res.attackers.includes(inf), "auto-gather includes the gun at range");
   ok(res.atk === 9, "combined strength 5+4 regardless of distance");
-  ok(res.code === "De" && !D.alive, "2:1 at die 6 destroys the defender");
-  ok(art.acted && inf.acted, "bombarding spends the gun's attack");
+  ok(res.code === "Ex" && !D.alive, "2:1 at die 5 is an Exchange — the defender falls");
+  ok(!inf.alive && art.alive, "the exchange costs the engaged foot, never the gun");
+  ok(art.acted, "bombarding spends the gun's attack");
 }
 
 /* --- bombardment safety: adverse results spare units firing at range --- */

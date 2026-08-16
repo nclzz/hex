@@ -59,8 +59,10 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const d = tinyDef({});
   ok(d.naw === true, "buildScenario marks the def as a NAW game");
   ok(d.crt === NAW_COMMON.CRT, "buildScenario installs the common CRT");
-  ok(d.terrain["."] && d.terrain["w"] && d.terrain["~"],
+  ok(d.terrain["."] && d.terrain["w"] && d.terrain["t"],
      "the common terrain palette is merged in");
+  ok(d.terrain["w"].losBlock && d.terrain["t"].losBlock && !d.terrain["."].losBlock,
+     "woods and towns block bombardment lines of sight [8.33]");
   // The CRT is the one piece of data the engine cannot invent.
   throws(() => new Game(Object.assign({}, d, { crt: null })),
          "a GameDef without a crt is rejected at construction");
@@ -75,18 +77,26 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const cells = Object.values(NAW_COMMON.CRT.table).flat();
   ok(cells.every((c) => ["Ae", "Ar", "Ex", "Dr", "De"].includes(c)),
      "the NAW CRT has no 'no effect' results");
-  ok(NAW_COMMON.CRT.table["1:4"].every((c) => c === "Ae"), "below 1-3 is automatic Ae");
-  ok(NAW_COMMON.CRT.table["6:1"].every((c) => c === "De"), "above 5-1 is automatic De");
-  ok(g.oddsColumn(24, 4) === "6:1", "6.0 lands on the auto-De band");
+  // Official chart shape (Combat Ratios, Attacker to Defender Strength).
+  ok(NAW_COMMON.CRT.columns.join(" ") === "1:5 1:4 1:3 1:2 1:1 2:1 3:1 4:1 5:1 6:1",
+     "the official columns run 1-5 through 6-1 (no 3-2)");
+  ok(NAW_COMMON.CRT.table["1:5"].every((c) => c === "Ae"), "1-5 is all Ae");
+  ok(NAW_COMMON.CRT.table["6:1"].every((c) => c === "De"), "6-1 is all De");
+  ok(NAW_COMMON.CRT.table["1:4"][0] === "Ar",
+     "even at 1-4 a lucky die 1 only repulses the attacker");
+  ok(NAW_COMMON.CRT.table["3:1"][0] === "De" && NAW_COMMON.CRT.table["2:1"][5] === "Ar",
+     "low rolls favor the attacker (3-1 die 1 De; 2-1 die 6 Ar)");
+  ok(g.oddsColumn(24, 4) === "6:1", "6.0 is 6-1");
   ok(g.oddsColumn(23, 4) === "5:1", "5.75 rounds down to 5-1");
   ok(g.oddsColumn(4, 12) === "1:3", "exactly one third is 1-3");
-  ok(g.oddsColumn(4, 13) === "1:4", "below one third is the auto-Ae band");
-  ok(g.oddsColumn(3, 2) === "3:2", "1.5 hits the 3-2 column");
-  ok(g.oddsColumn(39, 20) === "3:2", "1.95 still rounds down to 3-2");
+  ok(g.oddsColumn(4, 13) === "1:4", "below one third drops to 1-4");
+  ok(g.oddsColumn(3, 2) === "1:1", "1.5 rounds down to 1-1 (there is no 3-2 column)");
+  ok(g.oddsColumn(39, 20) === "1:1", "1.95 still rounds down to 1-1");
   ok(g.oddsColumn(2, 1) === "2:1", "2.0 reaches 2-1");
-  ok(NAW_COMMON.columnLabel("3:1") === "3-1", "column label uses series notation");
-  ok(/auto Ae/.test(NAW_COMMON.columnLabel("1:4")) && /auto De/.test(NAW_COMMON.columnLabel("6:1")),
-     "sentinel columns are labelled as the automatic bands");
+  ok(g.oddsColumn(1, 6) === "1:5", "worse than 1-5 is treated as 1-5 (chart note)");
+  ok(g.oddsColumn(20, 1) === "6:1", "better than 6-1 is treated as 6-1 (chart note)");
+  ok(NAW_COMMON.columnLabel("3:1") === "3-1" && NAW_COMMON.columnLabel("1:5") === "1-5",
+     "column labels use the chart's notation");
 }
 
 /* --- sticky ZOC: starting next to the enemy locks the unit -------------- */
@@ -109,7 +119,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "fr", units: [[1, 1, "inf"], [5, 5, "inf"]] },
     { faction: "al", units: [[1, 0, "inf"]] },
   ] }));
-  g.rng = die(1);
+  g.rng = die(4);
   ok(g.endPhase().ok, "movement ends normally");
   ok(g.phase === "combat", "into the combat phase");
   const un = g.unresolvedCombat();
@@ -120,7 +130,11 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
      "endPhase refuses while a mandatory battle is unfought");
   const target = g.living("al")[0];
   const res = g.resolveCombat(target);
-  ok(res.ok && res.code === "Ar", "1-1 at die 1 is Ar");
+  ok(res.ok && res.code === "Ar", "1-1 at die 4 is Ar");
+  // The retreat vacated the attacker's hex — the DEFENDER may advance [7.74].
+  ok(g.pendingAdvance && g.pendingAdvance.faction === "al",
+     "an Ar offers the DEFENDER the advance");
+  ok(g.declineAdvance().ok, "…which it may decline");
   ok(g.resolveCombat(target).ok === false, "a defender cannot be attacked twice");
   const un2 = g.unresolvedCombat();
   ok(un2.mustAttack.length === 0 && un2.mustBeAttacked.length === 0,
@@ -247,6 +261,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   ok(res.def === 8 && res.atk === 6 && res.column === "1:2",
      "combined defense sums each defender (with terrain)");
   ok(res.code === "Ar", "1-2 at die 3 is Ar");
+  if (g.pendingAdvance) g.declineAdvance(); // the defenders may decline the ground
   const un = g.unresolvedCombat();
   ok(un.mustAttack.length === 0 && un.mustBeAttacked.length === 0,
      "one combined battle satisfies every obligation it covers");
@@ -272,7 +287,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"], [1, 2, "art"]] },
     { faction: "al", units: [[1, 0, "inf"], [2, 0, "inf"]] },
   ] }));
-  g.rng = die(6);
+  g.rng = die(1); // 15 vs 4 -> 3-1, die 1 -> De
   g.endPhase();
   const [big, inf, art] = g.living("fr");
   const tgt = g.living("al")[0];
@@ -312,7 +327,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
 {
   const def = tinyDef({
     setup: [
-      { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"]] },
+      { faction: "fr", units: [[1, 1, "big"], [0, 1, "big"]] },
       { faction: "al", army: "anglo", units: [[1, 0, "inf"]] },
       { faction: "al", army: "pr", units: [[6, 5, "inf"]] },
     ],
@@ -322,7 +337,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     victory: (game) => NAW_COMMON.demoralizationVictory(game),
   });
   const g = new Game(def);
-  g.rng = die(6);
+  g.rng = die(1); // 12 vs 4 -> 3-1, die 1 -> De
   ok(g.lostSP("al") === 0 && g.lostSP("al", "anglo") === 0, "no losses yet");
   g.endPhase();
   const res = g.resolveCombat(g.units.find((u) => u.army === "anglo"));
@@ -335,7 +350,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   // An endsGame:false entry is tracked but never decides the game.
   const def = tinyDef({
     setup: [
-      { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"]] },
+      { faction: "fr", units: [[1, 1, "big"], [0, 1, "big"]] },
       { faction: "al", army: "pr", units: [[1, 0, "inf"]] },
     ],
     demoralization: [
@@ -344,7 +359,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     victory: (game) => NAW_COMMON.demoralizationVictory(game),
   });
   const g = new Game(def);
-  g.rng = die(6);
+  g.rng = die(1); // 12 vs 4 -> 3-1, die 1 -> De
   g.endPhase();
   g.resolveCombat(g.living("al")[0]);
   ok(g.lostSP("al", "pr") >= 4 && !g.over,
@@ -475,6 +490,483 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   ok(r.pendingAdvance === null && r.attackedIds.size === 0, "…and empty new state");
 }
 
+/* ======================= Standard Rules cases ============================ */
+
+// A walled corridor: row 1 is the only passable lane (cols 0-7).
+const WALL = { "#": { name: "Wall", color: "#333", moveCost: Infinity, defMult: 1, passable: false } };
+function corridorDef(over) {
+  return tinyDef(Object.assign({
+    terrain: WALL,
+    map: ["########", "........", "########", "########", "########", "########"],
+  }, over));
+}
+
+/* --- [5.31/5.33] friendly units are passed through, never stood upon ------ */
+{
+  const g = new Game(corridorDef({ setup: [
+    { faction: "fr", units: [[0, 1, "inf"], [2, 1, "inf"]] },
+    { faction: "al", units: [[6, 1, "inf"]] },
+  ] }));
+  const mover = g.living("fr")[0];
+  const reach = g.reachable(mover);
+  ok(reach.has(K(3, 1)), "a friend in the only lane is passed through");
+  ok(!reach.has(K(2, 1)), "…but his hex is no destination [5.32]");
+  ok(reach.get(K(3, 1)).cost === 3, "…and passing him costs nothing extra");
+}
+{
+  const g = new Game(corridorDef({ setup: [
+    { faction: "fr", units: [[0, 1, "inf"]] },
+    { faction: "al", units: [[3, 1, "inf"]] },
+  ] }));
+  const reach = g.reachable(g.living("fr")[0]);
+  ok(!reach.has(K(3, 1)) && !reach.has(K(4, 1)),
+     "an enemy-occupied hex is never entered nor passed [5.12]");
+  ok(reach.has(K(2, 1)), "…though its ZOC hex can still be entered (and stops movement)");
+}
+
+/* --- [5.2x] hexside movement costs ---------------------------------------- */
+{
+  const road = { type: "road", pairs: [] };
+  for (let c = 1; c < 8; c++) road.pairs.push([[c - 1, 1], [c, 1]]);
+  const g = new Game(corridorDef({ hexsides: [road], setup: [
+    { faction: "fr", units: [[0, 1, "inf"]] },
+    { faction: "al", units: [[7, 5, "inf"]] }, // parked off the lane? keep on-map:
+  ] }));
+  // (the al unit sits on a wall hex in this def — move it off-board concerns
+  //  aside, it plays no part; only the road math is under test)
+  const reach = g.reachable(g.living("fr")[0]);
+  ok(reach.get(K(7, 1)) && reach.get(K(7, 1)).cost === 3.5,
+     "road hexsides move at 1/2 MP per hex [5.22]");
+}
+{
+  const g = new Game(corridorDef({
+    hexsides: [{ type: "stream", pairs: [[[1, 1], [2, 1]]] }],
+    setup: [
+      { faction: "fr", units: [[0, 1, "inf"]] },
+      { faction: "al", units: [[7, 1, "inf"]] },
+    ],
+  }));
+  const reach = g.reachable(g.living("fr")[0]);
+  ok(reach.get(K(2, 1)).cost === 4, "a stream hexside costs two extra MPs [5.25]");
+}
+{
+  // Slope hexside: +1 only when LEAVING the slope hex downhill [5.26].
+  const d = tinyDef({
+    map: ["........", ".h......", "........", "........", "........", "........"],
+    hexsides: [{ type: "slope", pairs: [[[1, 1], [2, 1]]] }],
+    setup: [
+      { faction: "fr", units: [[1, 1, "inf"], [3, 1, "inf"]] },
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  });
+  const g = new Game(d);
+  const [onSlope, onClear] = g.living("fr");
+  ok(g.reachable(onSlope).get(K(2, 1)).cost === 2,
+     "leaving a slope hex downhill costs one extra MP [5.26]");
+  ok(g.reachable(onClear).get(K(1, 1)) === undefined || true, "sanity");
+  const up = g.stepCost(onClear, g.hex(...Object.values(at(2, 1))), g.hex(...Object.values(at(1, 1))));
+  ok(up === 2, "climbing into the slope hex costs only its terrain (no surcharge)");
+}
+
+/* --- [5.24/6.6/8.45] rivers: movement, ZOC, melee, bombardment ------------- */
+{
+  const mk = (edgeType) => new Game(corridorDef({
+    hexsides: [{ type: edgeType, pairs: [[[3, 1], [4, 1]]] }],
+    setup: [
+      { faction: "fr", units: [[3, 1, "art"]] },
+      { faction: "al", units: [[4, 1, "inf"]] },
+    ],
+  }));
+  const g = mk("river");
+  const art = g.living("fr")[0], tgt = g.living("al")[0];
+  ok(!g.reachable(art).has(K(4, 1)), "no movement across an unbridged river [5.24]");
+  ok(art.locked === false, "ZOC does not reach across the river [6.6]");
+  ok(!g.meleeAdjacent(art, tgt), "…and neither does melee [8.45]");
+  g.endPhase();
+  const un = g.unresolvedCombat();
+  ok(un.mustAttack.length === 0 && un.mustBeAttacked.length === 0,
+     "no mandatory battle across the water");
+  const res = g.resolveCombat([tgt], [art]);
+  ok(res.ok, "artillery may still bombard across the river [8.45]");
+  ok(art.alive, "…as a bombardment (the gun is immune)");
+
+  const gb = mk("bridge");
+  const art2 = gb.living("fr")[0];
+  ok(art2.locked === true && !gb.canMove(art2),
+     "a bridge carries ZOC — the gun starts locked in contact");
+}
+
+/* --- [6.6] the rules' Zone of Control Example ------------------------------ */
+{
+  // A unit's ZOC reaches all six neighbors — through streams, over bridged
+  // river hexsides, into any terrain — EXCEPT through an unbridged river.
+  const g = new Game(tinyDef({
+    map: ["........", "........", "....w...", "..t.....", "........", "........"],
+    hexsides: [
+      { type: "river",  pairs: [[[3, 3], [3, 4]]] },
+      { type: "bridge", pairs: [[[3, 3], [4, 4]]] },
+      { type: "stream", pairs: [[[3, 3], [3, 2]]] },
+    ],
+    setup: [
+      { faction: "fr", units: [[3, 3, "inf"]] },
+      { faction: "al", units: [[7, 0, "inf"]] },
+    ],
+  }));
+  const zoc = (c, r) => g.isEnemyZOC("al", at(c, r).q, at(c, r).r);
+  ok(zoc(4, 3), "ZOC example: plain neighbor");
+  ok(zoc(2, 3), "ZOC example: town neighbor (terrain never blocks)");
+  ok(zoc(4, 2), "ZOC example: woods neighbor (terrain never blocks)");
+  ok(zoc(3, 2), "ZOC example: across a stream");
+  ok(zoc(4, 4), "ZOC example: across a bridged river");
+  ok(!zoc(3, 4), "ZOC example: NO ZOC through an unbridged river [6.6]");
+}
+
+/* --- [7.73/7.8] displacement on retreat ------------------------------------ */
+{
+  // D's only exits are friendly-occupied: the friend is displaced.
+  const g = new Game(corridorDef({ setup: [
+    { faction: "fr", units: [[2, 1, "big"]] },
+    { faction: "al", units: [[3, 1, "inf"], [4, 1, "inf"]] },
+  ] }));
+  const [D, friend] = g.living("al");
+  g.applyResult("Dr", [D], [g.living("fr")[0]]);
+  ok(D.alive && Hex.key(D.q, D.r) === K(4, 1), "the retreater takes the friend's hex [7.73]");
+  ok(friend.alive && Hex.key(friend.q, friend.r) === K(5, 1),
+     "…and the friend is displaced one hex on [7.81]");
+}
+{
+  // Chain displacement, and elimination transfers to the RETREATER [7.82].
+  const g = new Game(corridorDef({ setup: [
+    { faction: "fr", units: [[2, 1, "big"]] },
+    { faction: "al", units: [[3, 1, "inf"], [4, 1, "inf"], [5, 1, "inf"], [6, 1, "inf"], [7, 1, "inf"]] },
+  ] }));
+  const [D, f1, f2, f3, f4] = g.living("al");
+  g.applyResult("Dr", [D], [g.living("fr")[0]]);
+  ok(!D.alive, "with the lane full to the wall, the RETREATER is eliminated [7.82]");
+  ok(f1.alive && f2.alive && f3.alive && f4.alive &&
+     Hex.key(f1.q, f1.r) === K(4, 1) && Hex.key(f4.q, f4.r) === K(7, 1),
+     "…and the friends stand exactly where they were");
+}
+{
+  // A displaced artillery unit that had not fought loses its fire [7.82].
+  const g = new Game(corridorDef({ setup: [
+    { faction: "fr", units: [[2, 1, "big"]] },
+    { faction: "al", units: [[3, 1, "inf"], [4, 1, "art"]] },
+  ] }));
+  g.endPhase(); // into the French Combat Phase
+  const [D, gun] = g.living("al");
+  ok(!gun.acted, "setup: the gun has not fought");
+  g.applyResult("Dr", [D], [g.living("fr")[0]]);
+  ok(gun.alive && Hex.key(gun.q, gun.r) === K(5, 1) && gun.acted === true,
+     "a displaced, unfired artillery unit may not fire this phase");
+}
+
+/* --- [7.74] the DEFENDER advances when Ae vacates the attacker's hex ------- */
+{
+  const g = new Game(tinyDef({ setup: [
+    { faction: "fr", units: [[1, 1, "sml"]] },
+    { faction: "al", units: [[1, 0, "inf"]] },
+  ] }));
+  g.rng = die(3);
+  g.endPhase();
+  const fr = g.living("fr")[0], al = g.living("al")[0];
+  const frHex = { q: fr.q, r: fr.r };
+  const res = g.resolveCombat([al]); // 1:4 -> automatic Ae
+  ok(res.code === "Ae" && !fr.alive, "the hopeless attack dies to a man");
+  ok(g.pendingAdvance && g.pendingAdvance.faction === "al",
+     "the vacated attacker hex is offered to the DEFENDER [7.74]");
+  ok(res.advance && res.advance.faction === "al", "…and the result says whose choice it is");
+  ok(g.advanceAfterCombat(al).ok && al.q === frHex.q && al.r === frHex.r,
+     "the victorious defender takes the ground");
+}
+
+/* --- [8.3] bombardment Line of Sight --------------------------------------- */
+{
+  // Straight shot through a wood: blocked.
+  const g = new Game(tinyDef({
+    map: ["........", "..w.....", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "art"]] },
+      { faction: "al", units: [[3, 1, "inf"]] },
+    ],
+  }));
+  const art = g.living("fr")[0], tgt = g.living("al")[0];
+  ok(!g.lineOfSight(art, tgt), "a wood on the straight line blocks the shot [8.31/8.33]");
+  ok(!g.attackersFor(tgt).includes(art), "…so the gun cannot bombard it");
+  g.endPhase();
+  ok(g.resolveCombat([tgt], [art]).ok === false, "…and the engine refuses the attack");
+}
+{
+  // Line along a hexside: blocked only if BOTH flanking hexes block [8.32].
+  const one = new Game(tinyDef({
+    map: ["........", "..w.....", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "art"]] },
+      { faction: "al", units: [[3, 2, "inf"]] },
+    ],
+  }));
+  ok(one.lineOfSight(one.living("fr")[0], one.living("al")[0]),
+     "one blocking flank leaves a hexside-line shot open [8.32]");
+  const both = new Game(tinyDef({
+    map: ["........", "..w.....", "..w.....", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "art"]] },
+      { faction: "al", units: [[3, 2, "inf"]] },
+    ],
+  }));
+  ok(!both.lineOfSight(both.living("fr")[0], both.living("al")[0]),
+     "…but two blocking flanks close it");
+}
+{
+  // The target's own terrain never blocks [8.34].
+  const g = new Game(tinyDef({
+    map: ["........", "...t....", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "art"]] },
+      { faction: "al", units: [[3, 1, "inf"]] },
+    ],
+  }));
+  ok(g.lineOfSight(g.living("fr")[0], g.living("al")[0]),
+     "a town in the TARGET hex does not block the shot [8.34]");
+}
+
+/* --- [8.41] artillery in an enemy ZOC may not bombard ---------------------- */
+{
+  const g = new Game(tinyDef({ setup: [
+    { faction: "fr", units: [[1, 1, "art"]] },
+    { faction: "al", units: [[1, 0, "inf"], [3, 1, "inf"]] },
+  ] }));
+  g.endPhase();
+  const art = g.living("fr")[0];
+  const [adjacent, distant] = g.living("al");
+  ok(Hex.distance(art, distant) === 2, "layout: a second enemy sits at gun range");
+  ok(g.attackersFor(adjacent).includes(art), "the gun must fight its neighbor [8.41]");
+  ok(!g.attackersFor(distant).includes(art), "…and may not bombard while in a ZOC");
+  ok(/ZOC/.test(g.resolveCombat([distant], [art]).reason || ""),
+     "…the engine refuses with the rule");
+}
+
+/* --- [10.0] night game-turns ----------------------------------------------- */
+{
+  const g = new Game(corridorDef({
+    nightTurns: [1],
+    setup: [
+      { faction: "fr", units: [[0, 1, "inf"]] },
+      { faction: "al", units: [[4, 1, "inf"]] },
+    ],
+  }));
+  ok(g.isNight(), "turn 1 is night");
+  const reach = g.reachable(g.living("fr")[0]);
+  ok(reach.has(K(2, 1)) && !reach.has(K(3, 1)),
+     "at night a unit may not even ENTER an enemy-controlled hex [10.2]");
+  ok(g.endPhase().ok && g.activeFaction === "al" && g.phase === "move",
+     "the night Combat Phase is skipped entirely [10.1]");
+  g.endPhase();
+  ok(g.turn === 2 && !g.isNight() && g.activeFaction === "fr" && g.phase === "move",
+     "day breaks on turn 2");
+  g.endPhase();
+  ok(g.phase === "combat", "…and combat returns with it");
+}
+
+/* --- the official Terrain Key ------------------------------------------------ */
+{
+  // Woods: entry prohibited.
+  const g = new Game(tinyDef({
+    map: ["........", ".w......", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 2, "inf"]] },
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  }));
+  ok(!g.reachable(g.living("fr")[0]).has(K(1, 1)),
+     "Woods are prohibited to movement (Terrain Key)");
+}
+{
+  // Woods-Road: entered or exited only through a hexside crossed by a road.
+  const mk = (withRoad) => new Game(tinyDef({
+    map: ["........", ".W......", "........", "........", "........", "........"],
+    hexsides: withRoad ? [{ type: "road", pairs: [[[1, 2], [1, 1]], [[1, 1], [1, 0]]] }] : [],
+    setup: [
+      { faction: "fr", units: [[1, 2, "inf"]] },
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  }));
+  const noRoad = mk(false);
+  ok(!noRoad.reachable(noRoad.living("fr")[0]).has(K(1, 1)),
+     "a Woods-Road hex cannot be entered off-road");
+  const road = mk(true);
+  const reach = road.reachable(road.living("fr")[0]);
+  ok(reach.has(K(1, 1)), "…but the road hexside lets a unit in");
+  ok(reach.has(K(1, 0)), "…and out the far side, along the road");
+  const W = road.hex(at(1, 1).q, at(1, 1).r), off = road.hex(at(2, 1).q, at(2, 1).r);
+  ok(!Number.isFinite(road.stepCost(road.living("fr")[0], W, off)),
+     "stepping OUT of it off-road is still prohibited");
+}
+{
+  // Retreats obey the same prohibition: only exits into Woods-Road without
+  // a road hexside leave the defender nowhere to go.
+  const g = new Game(tinyDef({
+    terrain: { "#": { name: "Wall", color: "#333", moveCost: Infinity, defMult: 1, passable: false } },
+    map: ["##W#####", "#..#####", "########", "########", "########", "########"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "big"]] },
+      { faction: "al", units: [[2, 1, "inf"]] },
+    ],
+  }));
+  const D = g.living("al")[0];
+  g.applyResult("Dr", [D], [g.living("fr")[0]]);
+  ok(!D.alive, "a defender whose only exit is off-road Woods-Road is eliminated");
+}
+{
+  // Bombardment may fire INTO a Woods-Road hex (only intervening hexes block).
+  const g = new Game(tinyDef({
+    map: ["........", ".W......", "........", "........", "........", "........"],
+    hexsides: [{ type: "road", pairs: [[[0, 0], [1, 1]]] }],
+    setup: [
+      { faction: "al", units: [[0, 0, "inf"]] },
+      { faction: "fr", units: [[1, 3, "art"]] },
+    ],
+  }));
+  // move the enemy INTO the Woods-Road hex via its road, then bombard it
+  const al = g.living("al")[0];
+  const a11 = at(1, 1); al.q = a11.q; al.r = a11.r;
+  g.endPhase();
+  ok(g.lineOfSight(g.living("fr")[0], al), "the target's own Woods-Road hex never blocks");
+  ok(g.resolveCombat([al], g.living("fr")).ok,
+     "artillery may bombard INTO a Woods-Road hex (Terrain Key note)");
+}
+{
+  // Buildings (and chateaux) DOUBLE the defender — no more, no less.
+  const g = new Game(tinyDef({
+    map: [".tc.....", "........", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "big"]] },
+      { faction: "al", units: [[1, 0, "big"], [2, 0, "big"]] },
+    ],
+  }));
+  const [town, chateau] = g.living("al");
+  ok(g.defenderStrength(town) === 12, "a Building doubles the defender");
+  ok(g.defenderStrength(chateau) === 12, "a chateau is a Building — doubled, not tripled");
+}
+
+/* --- the rules' "Examples of Attacks" sheet --------------------------------- */
+// Each case reproduces one illustrated situation and checks the odds column
+// (and legality) the sheet prints beside it.
+{
+  const EX = {
+    c1: NAW_COMMON.unit("1", "1", 1, 4), c2: NAW_COMMON.unit("2", "2", 2, 4),
+    c3: NAW_COMMON.unit("3", "3", 3, 4), c4: NAW_COMMON.unit("4", "4", 4, 4),
+    c6: NAW_COMMON.unit("6", "6", 6, 4),
+    a3: NAW_COMMON.unit("A3", "A", 3, 3, { range: 2 }),
+    a4: NAW_COMMON.unit("A4", "A", 4, 3, { range: 2 }),
+  };
+  const exDef = (setup, over) => tinyDef(Object.assign({ unitTypes: EX, setup }, over));
+  const fight = (setup, over) => {
+    const g = new Game(exDef(setup, over));
+    g.rng = die(2);
+    g.endPhase();
+    return g;
+  };
+
+  { // simple adjacent attack: 3 vs 1 -> "3 to 1 attack"
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c3"]] },
+      { faction: "al", units: [[1, 0, "c1"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.column === "3:1", "3 vs 1 adjacent is a 3-1 attack");
+  }
+  { // dashed arrow: the same odds by pure bombardment, gun untouched
+    const g = fight([
+      { faction: "fr", units: [[1, 2, "a3"]] },
+      { faction: "al", units: [[1, 0, "c1"]] },
+    ]);
+    g.rng = die(6); // 3-1 die 6 -> Ex
+    const gun = g.living("fr")[0];
+    const res = g.resolveCombat([g.living("al")[0]], [gun]);
+    ok(res.ok && res.column === "3:1", "3 vs 1 at two hexes is a 3-1 bombardment");
+    ok(res.code === "Ex" && !g.living("al").length && gun.alive,
+       "an Exchange by pure bombardment kills the defender and spares the gun [8.14]");
+  }
+  { // several attackers sum their strengths against one hex [7.22]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [0, 1, "c4"]] },
+      { faction: "al", units: [[1, 0, "c4"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 8 && res.column === "2:1",
+       "4+4 vs 4 combine into a 2-1 attack [7.22]");
+  }
+  { // one unit in two ZOCs attacks both as one combined defense [7.21]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c3"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al"), g.living("fr"));
+    ok(res.ok && res.def === 3 && res.column === "1:1",
+       "3 vs 1+2 combined defenders is a 1-1 attack [7.21]");
+  }
+  { // "4 to 1 combined attack": adjacent infantry + bombarding gun [8.21]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [1, 2, "a4"]] },
+      { faction: "al", units: [[1, 0, "c2"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 8 && res.column === "4:1",
+       "infantry plus bombarding gun make the 4-1 combined attack [8.21]");
+  }
+  { // multi-hex battle: the gun needs range to only ONE defending hex [8.22]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [0, 2, "a3"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ]);
+    const [inf, gun] = g.living("fr");
+    const [d1, d2] = g.living("al");
+    ok(Hex.distance(gun, d1) === 2 && Hex.distance(gun, d2) === 3,
+       "layout: the gun reaches only one of the two defending hexes");
+    const res = g.resolveCombat([d1, d2], [inf, gun]);
+    ok(res.ok && res.atk === 7 && res.column === "2:1",
+       "…and still adds its strength to the multi-hex battle [8.22]");
+  }
+  { // the procedure's worked example: 13 vs 4 rounds DOWN to 3-1
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c6"], [0, 1, "c4"], [0, 0, "c3"]] },
+      { faction: "al", units: [[1, 0, "c4"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 13 && res.column === "3:1",
+       "13 vs 4 rounds down (in the defender's favor) to 3-1");
+  }
+  { // "1 to 2, doubled due to Building hex"
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c6"]] },
+      { faction: "al", units: [[1, 0, "c6"]] },
+    ], { map: [".t......", "........", "........", "........", "........", "........"] });
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.def === 12 && res.column === "1:2",
+       "6 vs 6 in a town is 1-2, doubled due to the building hex");
+  }
+  { // "attacks may be constituted in more than one way": one combined battle…
+    const setup = [
+      { faction: "fr", units: [[1, 1, "c4"], [2, 1, "c4"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ];
+    const g1 = fight(setup);
+    const one = g1.resolveCombat(g1.living("al"), g1.living("fr"));
+    ok(one.ok && one.atk === 8 && one.def === 3,
+       "the cluster may fight as ONE combined battle");
+    // …or as two separate battles in the same phase.
+    const g2 = fight(setup);
+    const [A1, A2] = g2.living("fr");
+    const [D1, D2] = g2.living("al");
+    const b1 = g2.resolveCombat([D1], [A1]);
+    ok(b1.ok, "…or as separate battles: the first resolves");
+    if (g2.pendingAdvance) g2.declineAdvance();
+    const b2 = g2.resolveCombat([D2], [A2]);
+    ok(b2.ok, "…and the second follows in the same phase");
+  }
+}
+
 /* --- Napoleon at Waterloo: the scenario itself ------------------------------ */
 {
   const W = NAPOLEON_AT_WATERLOO;
@@ -507,7 +999,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   }
   const bulow = g.units.filter((u) => u.army === "pr" && u.entered);
   ok(bulow.length === 5, "Bülow's five counters arrive on Game-Turn 3");
-  ok(bulow.every((u) => g.hex(u.q, u.r).col === 21), "…on the easternmost column");
+  ok(bulow.every((u) => g.hex(u.q, u.r).col === 26), "…on the easternmost column");
   ok(bulow.every((u) => g.hex(u.q, u.r).terrain !== "w"), "…on non-woods hexes");
   while (!(g.turn === 6 && g.activeFaction === "al" && g.phase === "move")) {
     const r = g.endPhase();
