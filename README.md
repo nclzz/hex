@@ -236,7 +236,7 @@ how the rivers work.
 npm test          # pure Node, no install needed
 ```
 
-383 headless assertions across the four suites above, plus an optional
+393 headless assertions across the four suites above, plus an optional
 browser smoke test (Playwright) that drives a real battle — mandatory combat,
 the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 
