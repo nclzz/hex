@@ -17,7 +17,9 @@ ship on it (hot-seat, two players, mobile browser):
 - **Sambre Crossing** — 24×18, an army-sized battle across a river. Drag to
   scroll and pinch to zoom.
 
-You pick one on the start screen.
+You pick one on the start screen; before the battle begins, a short card
+spells out exactly how that scenario is won (per side, plus the draw), so
+both players know the goal before the first move.
 
 No build step, no dependencies, no server required. It's plain HTML + Canvas +
 vanilla JavaScript, so it runs by just opening a file.
@@ -215,8 +217,10 @@ test/
 Copy `games/ridge-assault.js` and edit the data inside
 `NAW_COMMON.buildScenario({...})`: `unitTypes` (via `NAW.unit(name, glyph,
 CS, MA, {range, army, color})`), extra `terrain`, the ASCII `map`, `setup`,
-`maxTurns`, `victory()`, and optionally `reinforcements`, `demoralization`
-and `nightTurns` — that's a battle's exclusive rules. Add a `<script>` tag in
+`maxTurns`, `victory()`, `winConditions` (the lines the pre-game wizard
+shows, each optionally tagged with a side), and optionally
+`reinforcements`, `demoralization` and `nightTurns` — that's a battle's
+exclusive rules. Add a `<script>` tag in
 `index.html` and keep the last line pushing the def onto `HEX_SCENARIOS`.
 Any common rule can still be overridden per scenario through the `rules:{}`
 function hooks (`applyResult`, `oddsColumn`, `skipPhase`, …) or a custom
@@ -236,7 +240,7 @@ how the rivers work.
 npm test          # pure Node, no install needed
 ```
 
-393 headless assertions across the four suites above, plus an optional
+396 headless assertions across the four suites above, plus an optional
 browser smoke test (Playwright) that drives a real battle — mandatory combat,
 the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 

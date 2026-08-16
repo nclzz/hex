@@ -348,6 +348,16 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
      "every scenario carries title/blurb/brief for the picker and help");
   ok(reg.every((d) => d.naw === true),
      "every scenario plays by the Napoleon at War common rules");
+  // The pre-game wizard needs each scenario's victory conditions, and any
+  // side reference must name a real faction of that scenario.
+  ok(reg.every((d) => Array.isArray(d.winConditions) && d.winConditions.length >= 2 &&
+       d.winConditions.every((c) => c.text && c.text.length > 10)),
+     "every scenario spells out its victory conditions for the wizard");
+  ok(reg.every((d) => d.winConditions.every((c) =>
+       !c.side || d.factions.some((f) => f.id === c.side))),
+     "every wizard condition tagged with a side names a real faction");
+  ok(ctx.NAW_GROUCHY.winConditions.length === NAPOLEON_AT_WATERLOO.winConditions.length + 1,
+     "the Grouchy variant adds its reinforcement-roll note to the wizard");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
