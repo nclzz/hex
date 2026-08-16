@@ -564,6 +564,11 @@
   // ----------------------- advance after combat -----------------------------
   function showAdvance() {
     const p = game.pendingAdvance;
+    // Since Ar/Ae results, the DEFENDER may be the one advancing — say whose
+    // decision this is (the device may need a quick hand-over).
+    const fac = factionById(p.faction);
+    $("advBox").querySelector(".advLabel").textContent =
+      `${fac.name}: a hex was cleared — advance into it?`;
     const box = $("advBtns");
     box.innerHTML = "";
     for (const id of p.unitIds) {
@@ -735,7 +740,9 @@
     const sp = $("sidePill");
     sp.innerHTML = `${fac.short} <span class="tn">${game.turn}/${DEF.maxTurns}</span>`;
     sp.style.background = fac.color;
-    $("phaseTxt").textContent = game.phase === "move" ? "Movement" : "Combat";
+    const night = game.isNight && game.isNight();
+    $("phaseTxt").textContent =
+      night ? "Night — Movement" : game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
     // Demoralization ticker: eliminated SP vs each army's breaking point.

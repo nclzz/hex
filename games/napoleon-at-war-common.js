@@ -62,19 +62,20 @@
   }
 
   /* ------------------------- common terrain chart ------------------------ */
-  // The series' standard terrain (reconstruction — see FIDELITY NOTE above).
-  // moveCost = MPs to ENTER; defMult = defender strength multiplier.
-  // Scenarios may add codes or override any of these.
+  // The series' standard terrain (multipliers are a reconstruction — see
+  // FIDELITY NOTE above). moveCost = MPs to ENTER; defMult = defender
+  // strength multiplier; losBlock marks Forest/Town as bombardment
+  // Line-of-Sight blockers [8.33]; slope drives the downhill hexside
+  // surcharge [5.26]. Scenarios may add codes or override any of these.
+  // Rivers, streams, bridges, roads and trails are HEXSIDE features
+  // (def.hexsides), not hex terrain.
   const terrain = {
     ".": { name: "Clear",   color: "#cfe3b8", moveCost: 1, defMult: 1 },
-    "w": { name: "Woods",   color: "#5a8f4e", moveCost: 2, defMult: 2 },
-    "h": { name: "Slope",   color: "#c9a36a", moveCost: 2, defMult: 2 },
-    "t": { name: "Town",    color: "#b9b2a6", moveCost: 1, defMult: 2 },
-    "c": { name: "Chateau", color: "#9a8f9c", moveCost: 1, defMult: 3 },
+    "w": { name: "Woods",   color: "#5a8f4e", moveCost: 2, defMult: 2, losBlock: true },
+    "h": { name: "Slope",   color: "#c9a36a", moveCost: 2, defMult: 2, slope: true },
+    "t": { name: "Town",    color: "#b9b2a6", moveCost: 1, defMult: 2, losBlock: true },
+    "c": { name: "Chateau", color: "#9a8f9c", moveCost: 1, defMult: 3, losBlock: true },
     "m": { name: "Marsh",   color: "#8f9b6a", moveCost: 3, defMult: 1 },
-    "=": { name: "Ford",    color: "#a89468", moveCost: 2, defMult: 1 },
-    "~": { name: "River",   color: "#4a7fa8", moveCost: Infinity, defMult: 1,
-           passable: false },
   };
 
   /* ------------------------------ helpers -------------------------------- */
@@ -118,13 +119,10 @@
   // maxTurns, victory(), and optionally objectives, reinforcements,
   // demoralization, nightTurns, extra terrain, rule overrides.
   function buildScenario(def) {
-    // The result application, sticky ZOC, mandatory combat and advances are
-    // the engine's built-in behavior; only series data is layered on here.
+    // The result application, sticky ZOC, mandatory combat, advances,
+    // displacement, night turns and hexside terrain are the engine's
+    // built-in behavior; only series data is layered on here.
     const rules = Object.assign({}, def.rules || {});
-    if (def.nightTurns && !rules.skipPhase) {
-      rules.skipPhase = (game, phase) =>
-        phase === "combat" && def.nightTurns.includes(game.turn);
-    }
     return Object.assign(
       {
         orientation: "pointy",

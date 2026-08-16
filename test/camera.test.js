@@ -219,7 +219,8 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
   ok(bad === 0, "every unit starts on an existing, passable hex");
   ok(stacked === 0, "no two units start on the same hex");
 
-  // The river must be crossable: each side has to be able to walk to every town.
+  // The hexside river must be crossable at the bridges: each side has to be
+  // able to walk to every town, never stepping over an unbridged river edge.
   function reaches(from) {
     const seenK = new Set([Hex.key(from.q, from.r)]);
     const queue = [from];
@@ -228,6 +229,7 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
       for (const nb of Hex.neighbors(cur)) {
         const k = Hex.key(nb.q, nb.r);
         if (seenK.has(k)) continue;
+        if (g.edgeBetween(cur, nb) === "river") continue;
         const h = g.hex(nb.q, nb.r);
         if (!h || !passable(h)) continue;
         seenK.add(k); queue.push(nb);
@@ -239,20 +241,43 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
     const start = g.living(f.id)[0];
     const seenK = reaches(start);
     const all = g.objectives.every((o) => seenK.has(Hex.key(o.q, o.r)));
-    ok(all, `${f.name} can reach every objective on foot (the fords work)`);
+    ok(all, `${f.name} can reach every objective on foot (the bridges work)`);
   }
-  // …and the river really is a barrier, i.e. the fords are the only way over.
-  const fords = def.map[8].split("").filter((c) => c === "=").length;
-  ok(fords === 3, "the river row has exactly three crossings");
-  ok(def.terrain["~"].passable === false, "river hexes are impassable");
+  // …and the river really is a barrier: without the bridges the south bank
+  // cannot reach the northern towns at all.
+  const bridges = [...g.edges.values()].filter((t) => t === "bridge").length;
+  const rivers = [...g.edges.values()].filter((t) => t === "river").length;
+  ok(bridges === 3, "the Sambre has exactly three bridges");
+  ok(rivers === 44, "the river runs the full width of the map (44 edges)");
+  {
+    const noBridges = new HexWar.Game(Object.assign({}, def, {
+      hexsides: [{ type: "river", pairs: def.hexsides.flatMap((h) => h.pairs) }],
+    }));
+    const frStart = noBridges.living("fr")[0];
+    const seenK = new Set([Hex.key(frStart.q, frStart.r)]);
+    const queue = [frStart];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const nb of Hex.neighbors(cur)) {
+        const k = Hex.key(nb.q, nb.r);
+        if (seenK.has(k)) continue;
+        if (noBridges.edgeBetween(cur, nb) === "river") continue;
+        const h = noBridges.hex(nb.q, nb.r);
+        if (!h || def.terrain[h.terrain].passable === false) continue;
+        seenK.add(k); queue.push(nb);
+      }
+    }
+    ok(noBridges.objectives.every((o) => !seenK.has(Hex.key(o.q, o.r))),
+       "with the bridges rivered over, the towns are unreachable");
+  }
 }
 
 /* --- Napoleon at Waterloo's map is sound -------------------------------- */
 {
   const def = NAPOLEON_AT_WATERLOO;
   const g = new HexWar.Game(def);
-  ok(def.map.every((row) => row.length === 22), "every Waterloo row is 22 hexes wide");
-  ok(def.map.length === 16, "the Waterloo map is 16 rows deep");
+  ok(def.map.every((row) => row.length === 27), "every Waterloo row is 27 hexes wide");
+  ok(def.map.length === 22, "the Waterloo map is 22 rows deep");
   ok(def.map.join("").split("").every((c) => def.terrain[c]),
      "every Waterloo map character maps to a declared terrain");
 
@@ -279,8 +304,8 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
     for (const [c, r] of grp.entry) {
       const a = Hex.offsetToAxial(c, r, "odd-r");
       const h = g.hex(a.q, a.r);
-      ok(!!h && passable(h) && h.terrain !== "w" && h.col === 21,
-         `entry hex ${c},${r} is a passable non-woods hex of column 21`);
+      ok(!!h && passable(h) && h.terrain !== "w" && h.col === 26,
+         `entry hex ${c},${r} is a passable non-woods hex of column 26`);
     }
   }
 
