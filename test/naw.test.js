@@ -760,6 +760,124 @@ function corridorDef(over) {
   ok(g.phase === "combat", "…and combat returns with it");
 }
 
+/* --- the rules' "Examples of Attacks" sheet --------------------------------- */
+// Each case reproduces one illustrated situation and checks the odds column
+// (and legality) the sheet prints beside it.
+{
+  const EX = {
+    c1: NAW_COMMON.unit("1", "1", 1, 4), c2: NAW_COMMON.unit("2", "2", 2, 4),
+    c3: NAW_COMMON.unit("3", "3", 3, 4), c4: NAW_COMMON.unit("4", "4", 4, 4),
+    c6: NAW_COMMON.unit("6", "6", 6, 4),
+    a3: NAW_COMMON.unit("A3", "A", 3, 3, { range: 2 }),
+    a4: NAW_COMMON.unit("A4", "A", 4, 3, { range: 2 }),
+  };
+  const exDef = (setup, over) => tinyDef(Object.assign({ unitTypes: EX, setup }, over));
+  const fight = (setup, over) => {
+    const g = new Game(exDef(setup, over));
+    g.rng = die(2);
+    g.endPhase();
+    return g;
+  };
+
+  { // simple adjacent attack: 3 vs 1 -> "3 to 1 attack"
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c3"]] },
+      { faction: "al", units: [[1, 0, "c1"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.column === "3:1", "3 vs 1 adjacent is a 3-1 attack");
+  }
+  { // dashed arrow: the same odds by pure bombardment, gun untouched
+    const g = fight([
+      { faction: "fr", units: [[1, 2, "a3"]] },
+      { faction: "al", units: [[1, 0, "c1"]] },
+    ]);
+    g.rng = die(1); // 3-1 die 1 -> Ex
+    const gun = g.living("fr")[0];
+    const res = g.resolveCombat([g.living("al")[0]], [gun]);
+    ok(res.ok && res.column === "3:1", "3 vs 1 at two hexes is a 3-1 bombardment");
+    ok(res.code === "Ex" && !g.living("al").length && gun.alive,
+       "an Exchange by pure bombardment kills the defender and spares the gun [8.14]");
+  }
+  { // several attackers sum their strengths against one hex [7.22]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [0, 1, "c4"]] },
+      { faction: "al", units: [[1, 0, "c4"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 8 && res.column === "2:1",
+       "4+4 vs 4 combine into a 2-1 attack [7.22]");
+  }
+  { // one unit in two ZOCs attacks both as one combined defense [7.21]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c3"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al"), g.living("fr"));
+    ok(res.ok && res.def === 3 && res.column === "1:1",
+       "3 vs 1+2 combined defenders is a 1-1 attack [7.21]");
+  }
+  { // "4 to 1 combined attack": adjacent infantry + bombarding gun [8.21]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [1, 2, "a4"]] },
+      { faction: "al", units: [[1, 0, "c2"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 8 && res.column === "4:1",
+       "infantry plus bombarding gun make the 4-1 combined attack [8.21]");
+  }
+  { // multi-hex battle: the gun needs range to only ONE defending hex [8.22]
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c4"], [0, 2, "a3"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ]);
+    const [inf, gun] = g.living("fr");
+    const [d1, d2] = g.living("al");
+    ok(Hex.distance(gun, d1) === 2 && Hex.distance(gun, d2) === 3,
+       "layout: the gun reaches only one of the two defending hexes");
+    const res = g.resolveCombat([d1, d2], [inf, gun]);
+    ok(res.ok && res.atk === 7 && res.column === "2:1",
+       "…and still adds its strength to the multi-hex battle [8.22]");
+  }
+  { // the procedure's worked example: 13 vs 4 rounds DOWN to 3-1
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c6"], [0, 1, "c4"], [0, 0, "c3"]] },
+      { faction: "al", units: [[1, 0, "c4"]] },
+    ]);
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.atk === 13 && res.column === "3:1",
+       "13 vs 4 rounds down (in the defender's favor) to 3-1");
+  }
+  { // "1 to 2, doubled due to Building hex"
+    const g = fight([
+      { faction: "fr", units: [[1, 1, "c6"]] },
+      { faction: "al", units: [[1, 0, "c6"]] },
+    ], { map: [".t......", "........", "........", "........", "........", "........"] });
+    const res = g.resolveCombat(g.living("al")[0]);
+    ok(res.ok && res.def === 12 && res.column === "1:2",
+       "6 vs 6 in a town is 1-2, doubled due to the building hex");
+  }
+  { // "attacks may be constituted in more than one way": one combined battle…
+    const setup = [
+      { faction: "fr", units: [[1, 1, "c4"], [2, 1, "c4"]] },
+      { faction: "al", units: [[1, 0, "c1"], [2, 0, "c2"]] },
+    ];
+    const g1 = fight(setup);
+    const one = g1.resolveCombat(g1.living("al"), g1.living("fr"));
+    ok(one.ok && one.atk === 8 && one.def === 3,
+       "the cluster may fight as ONE combined battle");
+    // …or as two separate battles in the same phase.
+    const g2 = fight(setup);
+    const [A1, A2] = g2.living("fr");
+    const [D1, D2] = g2.living("al");
+    const b1 = g2.resolveCombat([D1], [A1]);
+    ok(b1.ok, "…or as separate battles: the first resolves");
+    if (g2.pendingAdvance) g2.declineAdvance();
+    const b2 = g2.resolveCombat([D2], [A2]);
+    ok(b2.ok, "…and the second follows in the same phase");
+  }
+}
+
 /* --- Napoleon at Waterloo: the scenario itself ------------------------------ */
 {
   const W = NAPOLEON_AT_WATERLOO;
