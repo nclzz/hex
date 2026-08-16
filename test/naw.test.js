@@ -77,18 +77,26 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   const cells = Object.values(NAW_COMMON.CRT.table).flat();
   ok(cells.every((c) => ["Ae", "Ar", "Ex", "Dr", "De"].includes(c)),
      "the NAW CRT has no 'no effect' results");
-  ok(NAW_COMMON.CRT.table["1:4"].every((c) => c === "Ae"), "below 1-3 is automatic Ae");
-  ok(NAW_COMMON.CRT.table["6:1"].every((c) => c === "De"), "above 5-1 is automatic De");
-  ok(g.oddsColumn(24, 4) === "6:1", "6.0 lands on the auto-De band");
+  // Official chart shape (Combat Ratios, Attacker to Defender Strength).
+  ok(NAW_COMMON.CRT.columns.join(" ") === "1:5 1:4 1:3 1:2 1:1 2:1 3:1 4:1 5:1 6:1",
+     "the official columns run 1-5 through 6-1 (no 3-2)");
+  ok(NAW_COMMON.CRT.table["1:5"].every((c) => c === "Ae"), "1-5 is all Ae");
+  ok(NAW_COMMON.CRT.table["6:1"].every((c) => c === "De"), "6-1 is all De");
+  ok(NAW_COMMON.CRT.table["1:4"][0] === "Ar",
+     "even at 1-4 a lucky die 1 only repulses the attacker");
+  ok(NAW_COMMON.CRT.table["3:1"][0] === "De" && NAW_COMMON.CRT.table["2:1"][5] === "Ar",
+     "low rolls favor the attacker (3-1 die 1 De; 2-1 die 6 Ar)");
+  ok(g.oddsColumn(24, 4) === "6:1", "6.0 is 6-1");
   ok(g.oddsColumn(23, 4) === "5:1", "5.75 rounds down to 5-1");
   ok(g.oddsColumn(4, 12) === "1:3", "exactly one third is 1-3");
-  ok(g.oddsColumn(4, 13) === "1:4", "below one third is the auto-Ae band");
-  ok(g.oddsColumn(3, 2) === "3:2", "1.5 hits the 3-2 column");
-  ok(g.oddsColumn(39, 20) === "3:2", "1.95 still rounds down to 3-2");
+  ok(g.oddsColumn(4, 13) === "1:4", "below one third drops to 1-4");
+  ok(g.oddsColumn(3, 2) === "1:1", "1.5 rounds down to 1-1 (there is no 3-2 column)");
+  ok(g.oddsColumn(39, 20) === "1:1", "1.95 still rounds down to 1-1");
   ok(g.oddsColumn(2, 1) === "2:1", "2.0 reaches 2-1");
-  ok(NAW_COMMON.columnLabel("3:1") === "3-1", "column label uses series notation");
-  ok(/auto Ae/.test(NAW_COMMON.columnLabel("1:4")) && /auto De/.test(NAW_COMMON.columnLabel("6:1")),
-     "sentinel columns are labelled as the automatic bands");
+  ok(g.oddsColumn(1, 6) === "1:5", "worse than 1-5 is treated as 1-5 (chart note)");
+  ok(g.oddsColumn(20, 1) === "6:1", "better than 6-1 is treated as 6-1 (chart note)");
+  ok(NAW_COMMON.columnLabel("3:1") === "3-1" && NAW_COMMON.columnLabel("1:5") === "1-5",
+     "column labels use the chart's notation");
 }
 
 /* --- sticky ZOC: starting next to the enemy locks the unit -------------- */
@@ -111,7 +119,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "fr", units: [[1, 1, "inf"], [5, 5, "inf"]] },
     { faction: "al", units: [[1, 0, "inf"]] },
   ] }));
-  g.rng = die(1);
+  g.rng = die(4);
   ok(g.endPhase().ok, "movement ends normally");
   ok(g.phase === "combat", "into the combat phase");
   const un = g.unresolvedCombat();
@@ -122,7 +130,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
      "endPhase refuses while a mandatory battle is unfought");
   const target = g.living("al")[0];
   const res = g.resolveCombat(target);
-  ok(res.ok && res.code === "Ar", "1-1 at die 1 is Ar");
+  ok(res.ok && res.code === "Ar", "1-1 at die 4 is Ar");
   // The retreat vacated the attacker's hex — the DEFENDER may advance [7.74].
   ok(g.pendingAdvance && g.pendingAdvance.faction === "al",
      "an Ar offers the DEFENDER the advance");
@@ -279,7 +287,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"], [1, 2, "art"]] },
     { faction: "al", units: [[1, 0, "inf"], [2, 0, "inf"]] },
   ] }));
-  g.rng = die(6);
+  g.rng = die(1); // 15 vs 4 -> 3-1, die 1 -> De
   g.endPhase();
   const [big, inf, art] = g.living("fr");
   const tgt = g.living("al")[0];
@@ -319,7 +327,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
 {
   const def = tinyDef({
     setup: [
-      { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"]] },
+      { faction: "fr", units: [[1, 1, "big"], [0, 1, "big"]] },
       { faction: "al", army: "anglo", units: [[1, 0, "inf"]] },
       { faction: "al", army: "pr", units: [[6, 5, "inf"]] },
     ],
@@ -329,7 +337,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     victory: (game) => NAW_COMMON.demoralizationVictory(game),
   });
   const g = new Game(def);
-  g.rng = die(6);
+  g.rng = die(1); // 12 vs 4 -> 3-1, die 1 -> De
   ok(g.lostSP("al") === 0 && g.lostSP("al", "anglo") === 0, "no losses yet");
   g.endPhase();
   const res = g.resolveCombat(g.units.find((u) => u.army === "anglo"));
@@ -342,7 +350,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   // An endsGame:false entry is tracked but never decides the game.
   const def = tinyDef({
     setup: [
-      { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"]] },
+      { faction: "fr", units: [[1, 1, "big"], [0, 1, "big"]] },
       { faction: "al", army: "pr", units: [[1, 0, "inf"]] },
     ],
     demoralization: [
@@ -351,7 +359,7 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
     victory: (game) => NAW_COMMON.demoralizationVictory(game),
   });
   const g = new Game(def);
-  g.rng = die(6);
+  g.rng = die(1); // 12 vs 4 -> 3-1, die 1 -> De
   g.endPhase();
   g.resolveCombat(g.living("al")[0]);
   ok(g.lostSP("al", "pr") >= 4 && !g.over,
@@ -792,7 +800,7 @@ function corridorDef(over) {
       { faction: "fr", units: [[1, 2, "a3"]] },
       { faction: "al", units: [[1, 0, "c1"]] },
     ]);
-    g.rng = die(1); // 3-1 die 1 -> Ex
+    g.rng = die(6); // 3-1 die 6 -> Ex
     const gun = g.living("fr")[0];
     const res = g.resolveCombat([g.living("al")[0]], [gun]);
     ok(res.ok && res.column === "3:1", "3 vs 1 at two hexes is a 3-1 bombardment");

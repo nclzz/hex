@@ -65,13 +65,13 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
   groupings: tap enemies to build a battle (a unit touching two enemies
   attacks both at once as a combined defense), then pick which of your units
   join. The phase will not end while a fightable mandatory battle waits.
-- **The CRT.** Total attacking CS against total defending CS × terrain,
-  rounded down to a column (1-3 … 5-1); one die. Results: **Ae** (all engaged
-  attackers eliminated), **Ar** (engaged attackers retreat), **Ex** (defender
-  eliminated, attacker loses at least as many strength points from engaged
-  units), **Dr** (defender retreats), **De** (defender eliminated). Worse than
-  1-3 is an automatic Ae; better than 5-1 an automatic De. There is no
-  "no effect" — every battle bites.
+- **The CRT** (the official chart). Total attacking CS against total
+  defending CS × terrain, rounded down to a column (1-5 … 6-1); one die.
+  Results: **Ae** (all engaged attackers eliminated), **Ar** (engaged
+  attackers retreat), **Ex** (defender eliminated, attacker loses at least
+  as many strength points from engaged units), **Dr** (defender retreats),
+  **De** (defender eliminated). Attacks worse than 1-5 are treated as 1-5,
+  better than 6-1 as 6-1. There is no "no effect" — every battle bites.
 - **Retreats are one hex,** never into an enemy ZOC. A retreater with no
   vacant hex **displaces** a friendly neighbour, who retreats in turn (chains
   allowed); only when nobody can make room does the retreater die — and a
@@ -219,15 +219,15 @@ The mechanics are implemented from the published **Napoleon At War Standard
 Rules text** (sections 4.0–10.0: sequence, movement incl. friendly
 pass-through and hexside costs, Zones of Control incl. rivers, mandatory and
 multi-hex combat, retreats with displacement, advances for either victor,
-the artillery rules with Line of Sight, and night game-turns). The Waterloo
-map is drawn from the published game map. Still **reconstructions**, all
-plain data in one place each, easy to true up against the published charts:
+the artillery rules with Line of Sight, and night game-turns). The
+**Combat Results Table is the official chart** (columns 1-5 … 6-1 with the
+clamp note), and the Waterloo map is drawn from the published game map.
+Still **reconstructions**, all plain data in one place each, easy to true
+up against the published charts:
 
-- the individual **CRT cell values** (`games/napoleon-at-war-common.js`) —
-  correct in shape (columns, result mix, monotone in odds and die), not
-  guaranteed cell-for-cell;
-- the **Terrain Effects Chart** numbers (same file) — the rules text refers
-  to a chart that isn't part of it;
+- the **Terrain Effects Chart** numbers
+  (`games/napoleon-at-war-common.js`) — the rules text refers to a chart
+  that isn't part of it;
 - the Waterloo **order of battle** and **demoralization levels**
   (`games/napoleon-at-waterloo.js`), sized to the series' scale.
 

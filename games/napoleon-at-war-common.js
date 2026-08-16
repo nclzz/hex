@@ -23,41 +23,40 @@
      the other player wins.
    - buildScenario(), night-turn scheduling, and the unit-type factory.
 
-   FIDELITY NOTE — the wiki was unreachable from this environment (network
-   egress blocked), so the individual CRT cell values and the terrain chart
-   below are a careful RECONSTRUCTION of the SPI system: correct in shape
-   (columns, result mix, monotone in odds and die) but not guaranteed
-   cell-for-cell. They are plain data — correct them here if you have the
-   published chart, and every scenario inherits the fix.
+   FIDELITY NOTE — the CRT below is the OFFICIAL published chart. The
+   terrain chart's movement costs and defense multipliers remain a careful
+   reconstruction (the rules text refers to a Terrain Effects Chart that is
+   published separately). They are plain data — correct them here if you
+   have the published chart, and every scenario inherits the fix.
    ========================================================================= */
 (function (global) {
   "use strict";
 
   /* ------------------------------- CRT ----------------------------------- */
-  // Columns "1:4" and "6:1" are sentinels encoding the automatic bands: any
-  // odds worse than 1-3 round down onto all-Ae, anything 6-1 or better lands
-  // on all-De. The engine's round-down column mapping then needs no special
-  // cases. Rows are die 1..6.
+  // The OFFICIAL Combat Results Table (Combat Ratios, Attacker to Defender
+  // Strength). Rows are die 1..6, columns 1-5 through 6-1. Per the chart's
+  // note, attacks worse than 1-5 are treated as 1-5 and attacks better than
+  // 6-1 as 6-1 — the engine's round-down column mapping clamps to the outer
+  // columns, which encodes exactly that.
   const CRT = {
-    columns: ["1:4", "1:3", "1:2", "1:1", "3:2", "2:1", "3:1", "4:1", "5:1", "6:1"],
+    columns: ["1:5", "1:4", "1:3", "1:2", "1:1", "2:1", "3:1", "4:1", "5:1", "6:1"],
     table: {
-      "1:4": ["Ae", "Ae", "Ae", "Ae", "Ae", "Ae"], // auto — worse than 1-3
-      "1:3": ["Ae", "Ae", "Ae", "Ar", "Ar", "Ex"],
-      "1:2": ["Ae", "Ae", "Ar", "Ar", "Ex", "Ex"],
-      "1:1": ["Ar", "Ar", "Ex", "Ex", "Dr", "Dr"],
-      "3:2": ["Ar", "Ex", "Ex", "Dr", "Dr", "Dr"],
-      "2:1": ["Ex", "Ex", "Dr", "Dr", "Dr", "De"],
-      "3:1": ["Ex", "Dr", "Dr", "Dr", "De", "De"],
-      "4:1": ["Dr", "Dr", "Dr", "De", "De", "De"],
-      "5:1": ["Dr", "Dr", "De", "De", "De", "De"],
-      "6:1": ["De", "De", "De", "De", "De", "De"], // auto — better than 5-1
+      //  die:   1     2     3     4     5     6
+      "1:5": ["Ae", "Ae", "Ae", "Ae", "Ae", "Ae"],
+      "1:4": ["Ar", "Ae", "Ae", "Ae", "Ae", "Ae"],
+      "1:3": ["Ar", "Ar", "Ae", "Ae", "Ae", "Ae"],
+      "1:2": ["Dr", "Ar", "Ar", "Ae", "Ar", "Ar"],
+      "1:1": ["Dr", "Dr", "Dr", "Ar", "Ar", "Ar"],
+      "2:1": ["Dr", "Dr", "Dr", "Dr", "Ex", "Ar"],
+      "3:1": ["De", "Dr", "Dr", "Dr", "Dr", "Ex"],
+      "4:1": ["De", "Dr", "Dr", "Dr", "Ex", "Ex"],
+      "5:1": ["De", "De", "De", "Dr", "Ex", "Ex"],
+      "6:1": ["De", "De", "De", "De", "De", "De"],
     },
   };
 
-  // Human label for a CRT column ("3:1" -> "3-1", sentinels explained).
+  // Human label for a CRT column ("3:1" -> "3-1").
   function columnLabel(col) {
-    if (col === "1:4") return "worse than 1-3 (auto Ae)";
-    if (col === "6:1") return "better than 5-1 (auto De)";
     return col.replace(":", "-");
   }
 
