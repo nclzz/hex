@@ -217,11 +217,12 @@
     canExit(unit) {
       const ex = this.def.exitHexes;
       return !!ex && this.phase === "move" && unit.faction === this.activeFaction &&
-        unit.faction === ex.faction && this.onMap(unit) && !unit.moved &&
+        unit.faction === ex.faction && this.onMap(unit) &&
         !unit.locked && this.isExitHex(unit.q, unit.r);
     }
     exitUnit(unit) {
       if (!this.canExit(unit)) return { ok: false, reason: "cannot exit here" };
+      this.moveLog = this.moveLog.filter((m) => m.unit !== unit);
       unit.exited = true;
       unit.entered = false; // off the map: no ZOC, no queries, but not destroyed
       this.events.emit("exit", { unit, count: this.exitedCount(unit.faction) });

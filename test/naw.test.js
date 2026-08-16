@@ -1038,12 +1038,21 @@ function corridorDef(over) {
      "an exited unit is off-map but NOT destroyed [8.3]");
   ok(g.lostSP("fr") === 0, "…and contributes nothing to enemy victory [8.3]");
   ok(g.exitUnit(u1).ok === false, "no unit exits twice");
-  const moved = g.units.find((x) => x.faction === "fr" && x.type === "inf4");
-  moved.q = spot.q; moved.r = spot.r; moved.moved = true;
-  ok(!g.canExit(moved), "a unit that already moved this phase waits for the next");
-  // save/restore round-trip keeps the exit
+  // [8.3] a unit may march onto an exit hex and off the map in ONE phase.
+  const mv = g.units.find((x) => x.faction === "fr" && x.type === "inf4");
+  const from = at(4, 1);
+  mv.q = from.q; mv.r = from.r;
+  ok(g.moveUnit(mv, spot.q, spot.r).ok, "a unit marches onto the exit hex…");
+  ok(g.canExit(mv), "…and may still exit in the same Movement Phase [8.3]");
+  ok(g.exitUnit(mv).ok && g.exitedCount("fr") === 2, "…so it exits after moving");
+  ok(!g.canUndo(), "Undo cannot resurrect an exited unit — its move is expunged");
+  const lk = g.units.find((x) => x.faction === "fr" && !x.exited);
+  lk.q = spot.q; lk.r = spot.r; lk.locked = true;
+  ok(!g.canExit(lk), "a ZOC-locked unit cannot march off");
+  lk.locked = false;
+  // save/restore round-trip keeps the exits
   const r = Game.restore(W, JSON.parse(JSON.stringify(g.serialize())));
-  ok(r.exitedCount("fr") === 1 && r.units[u1.id].exited && !r.onMap(r.units[u1.id]),
+  ok(r.exitedCount("fr") === 2 && r.units[u1.id].exited && !r.onMap(r.units[u1.id]),
      "exits survive save and restore");
 }
 {
@@ -1106,6 +1115,52 @@ function corridorDef(over) {
   }
   ok(g.over && g.winner === "fr",
      "the seventh exit ends it — French victory [8.3]");
+  ok(g.units.filter((u) => u.army === "pr").every((u) => u.faction === "al"),
+     "Prussian units are Allied faction — their attacks shift and their losses count [8.2]");
+}
+{
+  // [8.3] units may NOT leave the map through combat: a retreat with no
+  // on-map refuge destroys the unit, even standing on an exit hex.
+  const g = new Game(tinyDef({
+    exitHexes: { faction: "fr", target: 7, hexes: [[0, 0], [1, 0], [2, 0]] },
+    setup: [
+      { faction: "fr", units: [[7, 5, "inf"]] },
+      { faction: "al", units: [[5, 0, "inf"], [6, 0, "inf"]] },
+    ],
+  }));
+  g.endPhase(); // French combat (nobody adjacent)
+  g.endPhase(); // Allied movement
+  const D = g.living("fr")[0], [A1, A2] = g.living("al");
+  const p1 = at(1, 0), p2 = at(1, 1), p3 = at(0, 1);
+  D.q = p1.q; D.r = p1.r;      // on an exit hex, its back to the map edge
+  A1.q = p2.q; A1.r = p2.r; A2.q = p3.q; A2.r = p3.r;
+  g.endPhase(); // Allied combat
+  g.rng = die(1); // 8 vs 4 = 2-1, die 1 -> Dr
+  const res = g.resolveCombat([D], [A1, A2]);
+  ok(res.code === "Dr", "the defender on the exit hex is forced to retreat");
+  ok(!D.alive && !D.exited,
+     "forced off the map by combat, it is destroyed — never exited [8.3]");
+  ok(g.lostSP("fr") === 4, "…and its Strength Points count as losses");
+}
+{
+  // [8.3] exits may precede demoralization, and MORE than seven may go.
+  const g = new Game(NAPOLEON_AT_WATERLOO);
+  let out = 0;
+  for (const u of g.units.filter((x) => x.faction === "fr")) {
+    if (out >= 8) break;
+    const spot = at(4 - (out % 2), 0);
+    if (g.unitAt(spot.q, spot.r)) continue;
+    u.q = spot.q; u.r = spot.r; u.moved = false; u.locked = false;
+    if (g.exitUnit(u).ok) out++;
+  }
+  ok(out === 8 && !g.over,
+     "eight units march off before any losses — exits alone win nothing [8.3]");
+  for (const u of g.units.filter((x) => x.faction === "al")) {
+    if (g.lostSP("al") >= 40) break;
+    u.alive = false;
+  }
+  ok(g._checkVictory() && g.winner === "fr",
+     "demoralization completes the French conditions — earlier exits count [8.3]");
 }
 {
   // The Grouchy Variant [9.0]: codes rolled at setup drive the schedules.
