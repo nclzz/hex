@@ -29,9 +29,12 @@
                      pairs: [[[c,r],[c,r]], ...] }],   // optional edge features
        objectives:[{col,row,owner}] (optional, for victory helpers),
        setup:     [{ faction, army?, units:[[col,row,typeKey], ...] }],
-       reinforcements: [{ turn, faction, army?, entry:[[col,row],...],
+       reinforcements: [{ turn|turnFor(game)->turn|null, faction, army?,
+                          entry:[[col,row],...],
                           units:["typeKey", ...] }],   // optional, scheduled arrivals
        demoralization: { armyOrFactionId: level },     // optional, read by victory()
+       exitHexes: { faction, target, hexes:[[col,row],...] }, // optional map exit
+       variants:  { roll(game) -> plainJSON },  // optional pre-game random codes
        nightTurns:[n, ...],                   // optional: no combat, no ZOC entry
        phases:    ["move","combat"],          // per-faction, in order
        maxTurns:  number,
@@ -107,6 +110,9 @@
         const a = Hex.offsetToAxial(o.col, o.row, this.offsetMode);
         return { key: Hex.key(a.q, a.r), q: a.q, r: a.r, owner: o.owner };
       });
+      // Map-exit hexes (a scenario victory condition, e.g. marching off north)
+      this.exitKeys = new Set((this.def.exitHexes ? this.def.exitHexes.hexes : [])
+        .map(([c, r]) => { const a = Hex.offsetToAxial(c, r, this.offsetMode); return Hex.key(a.q, a.r); }));
       // Units. Reinforcements are created up front too (entered:false, held
       // off-map) so unit ids and counts are stable for save/restore.
       this.units = [];
@@ -132,6 +138,9 @@
           });
         }
       });
+      // Pre-game variant codes (e.g. secret reinforcement schedules)
+      this.variant = this.def.variants ? this.def.variants.roll(this) : null;
+      this.scenarioState = null; // optional scenario-owned JSON blob (persisted)
       // Turn state
       this.turn = 1;
       this.sideIndex = 0;             // index into factions[] whose turn it is
@@ -191,10 +200,33 @@
 
     // Cumulative eliminated Strength Points — derived, nothing to serialize.
     // `army` narrows to a tagged army within the faction (e.g. Prussians).
+    // Units that marched off the map are NOT destroyed and never count.
     lostSP(faction, army) {
       return this.units
         .filter((u) => !u.alive && u.faction === faction && (army == null || u.army === army))
         .reduce((s, u) => s + this.combat(u), 0);
+    }
+
+    /* ----------------------------- map exit ------------------------------- */
+    // Some scenarios let one side win by marching units off designated edge
+    // hexes during its own Movement Phases. Exited units are alive but gone.
+    isExitHex(q, r) { return this.exitKeys.has(Hex.key(q, r)); }
+    exitedCount(faction) {
+      return this.units.filter((u) => u.exited && u.faction === faction).length;
+    }
+    canExit(unit) {
+      const ex = this.def.exitHexes;
+      return !!ex && this.phase === "move" && unit.faction === this.activeFaction &&
+        unit.faction === ex.faction && this.onMap(unit) && !unit.moved &&
+        !unit.locked && this.isExitHex(unit.q, unit.r);
+    }
+    exitUnit(unit) {
+      if (!this.canExit(unit)) return { ok: false, reason: "cannot exit here" };
+      unit.exited = true;
+      unit.entered = false; // off the map: no ZOC, no queries, but not destroyed
+      this.events.emit("exit", { unit, count: this.exitedCount(unit.faction) });
+      this._checkVictory();
+      return { ok: true };
     }
 
     /* ------------------------------- rules ------------------------------- */
@@ -457,7 +489,10 @@
 
     // Resolve an attack on `defenders` (a unit or an array of units fought as
     // one combined battle). Attackers auto-gathered unless supplied.
-    resolveCombat(defenders, attackers) {
+    // opts.lower: the attacker may deliberately fight at a LOWER combat
+    // ratio, announced before the roll [6.2]; the column steps down the CRT,
+    // never up.
+    resolveCombat(defenders, attackers, opts) {
       if (this.phase !== "combat") return { ok: false, reason: "not combat phase" };
       if (this.pendingAdvance) return { ok: false, reason: "advance pending" };
       defenders = Array.isArray(defenders) ? defenders.slice() : [defenders];
@@ -503,7 +538,12 @@
       }
       const atk = this.attackerStrength(attackers);
       const def = defenders.reduce((s, d) => s + this.defenderStrength(d), 0);
-      const column = this.oddsColumn(atk, def);
+      let column = this.oddsColumn(atk, def);
+      const lower = opts && opts.lower ? Math.max(0, Math.floor(opts.lower)) : 0;
+      if (lower) {
+        const cols = this.def.crt.columns;
+        column = cols[Math.max(0, cols.indexOf(column) - lower)];
+      }
       const die = this.rollDie();
       const code = this.def.crt.table[column][die - 1];
       const defHexes = defenders.map((d) => ({ q: d.q, r: d.r }));
@@ -645,14 +685,19 @@
       const groups = this.def.reinforcements || [];
       const placed = [];
       for (const u of this.units) {
-        if (!u.alive || u.entered !== false) continue;
+        if (!u.alive || u.entered !== false || u.exited) continue;
         const grp = groups[u.rgroup];
-        if (!grp || grp.faction !== faction || grp.turn > this.turn) continue;
+        if (!grp || grp.faction !== faction) continue;
+        // A variant schedule may move a group's arrival — or cancel it (null).
+        const due = grp.turnFor ? grp.turnFor(this) : grp.turn;
+        if (due == null || due > this.turn) continue;
         const spot = grp.entry
           .map(([c, r]) => Hex.offsetToAxial(c, r, this.offsetMode))
           .find((a) => {
             const h = this.hex(a.q, a.r);
-            return h && this.terrain[h.terrain].passable !== false && !this.unitAt(a.q, a.r);
+            return h && this.terrain[h.terrain].passable !== false &&
+              !this.unitAt(a.q, a.r) &&
+              !this.isEnemyZOC(faction, a.q, a.r); // never into an enemy ZOC [7.2]
           });
         if (!spot) continue;
         u.q = spot.q; u.r = spot.r;
@@ -733,7 +778,10 @@
           id: u.id, faction: u.faction, type: u.type,
           q: u.q, r: u.r, alive: u.alive, moved: u.moved, acted: u.acted,
           entered: u.entered, locked: u.locked, freshArrival: u.freshArrival,
+          exited: !!u.exited,
         })),
+        variant: this.variant,
+        scenarioState: this.scenarioState,
         moveLog: this.moveLog.map((m) => ({
           unitId: m.unit.id, fromQ: m.fromQ, fromR: m.fromR,
         })),
@@ -773,8 +821,9 @@
         if (!u || u.id !== su.id || seen.has(su.id)) bad("unit id " + su.id);
         seen.add(su.id);
         if (u.faction !== su.faction || u.type !== su.type) bad("unit identity " + su.id);
-        if (su.alive && !g.hex(su.q, su.r)) bad("unit off board " + su.id);
-        if (su.entered === false && (su.moved || su.acted)) bad("unentered unit acted " + su.id);
+        if (su.alive && su.entered !== false && !g.hex(su.q, su.r)) bad("unit off board " + su.id);
+        if (su.exited && su.entered !== false) bad("exited unit still on map " + su.id);
+        if (su.entered === false && !su.exited && (su.moved || su.acted)) bad("unentered unit acted " + su.id);
       }
       if (!Array.isArray(data.moveLog)) bad("moveLog");
       for (const m of data.moveLog) {
@@ -796,7 +845,10 @@
         u.entered = su.entered !== false; // absent in old saves -> on-map
         u.locked = !!su.locked;
         u.freshArrival = !!su.freshArrival;
+        u.exited = !!su.exited;
       }
+      g.variant = data.variant != null ? data.variant : g.variant;
+      g.scenarioState = data.scenarioState != null ? data.scenarioState : null;
       g.turn = data.turn;
       g.sideIndex = data.sideIndex;
       g.phaseIndex = data.phaseIndex;

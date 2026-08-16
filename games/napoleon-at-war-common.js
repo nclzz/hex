@@ -59,6 +59,15 @@
     return col.replace(":", "-");
   }
 
+  // Move a column up (+) or down (-) the CRT, clamped to its ends — used by
+  // exclusive rules that shift combat ratios (e.g. demoralization).
+  function shiftColumn(game, column, delta) {
+    const cols = game.def.crt.columns;
+    const i = cols.indexOf(column);
+    if (i < 0) return column;
+    return cols[Math.max(0, Math.min(cols.length - 1, i + delta))];
+  }
+
   /* ------------------------- common terrain chart ------------------------ */
   // The OFFICIAL Terrain Key: Clear costs 1 MP with no combat effect; Woods
   // are prohibited to movement and block artillery Lines of Sight;
@@ -144,7 +153,7 @@
   }
 
   global.NAW_COMMON = {
-    CRT, columnLabel, terrain, unit,
+    CRT, columnLabel, shiftColumn, terrain, unit,
     demoralizationVictory, demoralizationStatus, buildScenario,
   };
 })(typeof window !== "undefined" ? window : globalThis);

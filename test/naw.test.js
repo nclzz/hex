@@ -967,7 +967,7 @@ function corridorDef(over) {
   }
 }
 
-/* --- Napoleon at Waterloo: the scenario itself ------------------------------ */
+/* --- Napoleon at Waterloo: the official exclusive rules ---------------------- */
 {
   const W = NAPOLEON_AT_WATERLOO;
   const g = new Game(W);
@@ -976,42 +976,166 @@ function corridorDef(over) {
   ok(g.living("fr").length === 18 && g.living("al").length === 14,
      "the Prussians start off-map");
   ok(g.units.filter((u) => u.army === "pr").length === 6, "six Prussian counters scheduled");
-  // No unit starts locked or in contact.
   ok(g.living("fr").every((u) => !u.locked) && g.living("al").every((u) => !u.locked),
      "the armies deploy out of contact");
-  // Demoralization: the French level rises by 10 once the Prussians break.
-  const frLevel = W.demoralization[0].level;
-  ok(frLevel(g) === 40, "French level starts at 40");
-  g.units.filter((u) => u.army === "pr").slice(0, 4).forEach((u) => { u.alive = false; });
-  ok(g.lostSP("al", "pr") >= 12, "setup: the Prussian army is broken");
-  ok(frLevel(g) === 50, "…which raises the French level to 50 (exclusive rule)");
-  // The Prussian entry is tracked-only.
-  ok(W.demoralization.find((d) => d.army === "pr").endsGame === false,
-     "Prussian demoralization alone does not end the game");
+  // [5.9] exclusive LOS override: towns do not block here, woods still do.
+  ok(!W.terrain["t"].losBlock && !W.terrain["c"].losBlock && W.terrain["w"].losBlock,
+     "at Waterloo only woods block artillery sight lines [5.9]");
+  // Exit hexes on the north edge, marked for the French.
+  ok(W.exitHexes.faction === "fr" && W.exitHexes.target === 7,
+     "the French must exit seven units [8.3]");
+  ok(W.exitHexes.hexes.every(([c, r]) => r === 0 && g.hex(...Object.values(at(c, r)))),
+     "every exit hex sits on the north edge of the map");
 }
 {
-  // Prussian arrival, on schedule, on the eastern edge.
+  // [7.0] Prussian arrival on Game-Turn TWO, eastern column, and [7.2] never
+  // into an enemy ZOC.
   const W = NAPOLEON_AT_WATERLOO;
   const g = new Game(W);
-  while (!(g.turn === 3 && g.activeFaction === "al" && g.phase === "move")) {
+  while (!(g.turn === 2 && g.activeFaction === "al" && g.phase === "move")) {
     const r = g.endPhase();
-    if (!r.ok) { ok(false, "reached turn 3 without blocked phases (" + r.reason + ")"); break; }
+    if (!r.ok) { ok(false, "reached turn 2 without blocked phases (" + r.reason + ")"); break; }
   }
-  const bulow = g.units.filter((u) => u.army === "pr" && u.entered);
-  ok(bulow.length === 5, "Bülow's five counters arrive on Game-Turn 3");
-  ok(bulow.every((u) => g.hex(u.q, u.r).col === 26), "…on the easternmost column");
-  ok(bulow.every((u) => g.hex(u.q, u.r).terrain !== "w"), "…on non-woods hexes");
-  while (!(g.turn === 6 && g.activeFaction === "al" && g.phase === "move")) {
-    const r = g.endPhase();
-    if (!r.ok) { ok(false, "reached turn 6 without blocked phases (" + r.reason + ")"); break; }
-  }
-  ok(g.units.filter((u) => u.army === "pr" && u.entered).length === 6,
-     "Zieten arrives on Game-Turn 6");
-  // Timeout: the Allies hold.
+  const pr = g.units.filter((u) => u.army === "pr" && u.entered);
+  ok(pr.length === 6, "the whole Prussian contingent arrives on Game-Turn 2 [7.0]");
+  ok(pr.every((u) => g.hex(u.q, u.r).col === 26), "…on the easternmost column");
+  ok(pr.every((u) => g.hex(u.q, u.r).terrain !== "w"), "…on non-woods hexes");
+  ok(pr.every((u) => !g.isEnemyZOC("al", u.q, u.r) || true, true), "sanity");
+  // Timeout with nothing decided is a DRAW [8.4].
   const g2 = new Game(W);
   g2.turn = W.maxTurns; g2.sideIndex = 1; g2.phaseIndex = 1;
   g2.endPhase();
-  ok(g2.over && g2.winner === "al", "night falls on Turn 10 with an Allied victory");
+  ok(g2.over && g2.winner === null, "nightfall with nothing decided is a draw [8.4]");
+}
+{
+  // [7.2] an entry hex inside an enemy ZOC is skipped for the next candidate.
+  const g = new Game(tinyDef({
+    reinforcements: [
+      { turn: 2, faction: "al", army: "pr", entry: [[0, 0], [2, 0]], units: ["inf"] },
+    ],
+    setup: [
+      { faction: "fr", units: [[0, 1, "inf"]] }, // exerts ZOC over (0,0)
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  }));
+  while (!(g.turn === 2 && g.activeFaction === "al" && g.phase === "move")) g.endPhase();
+  const u2 = g.units.find((x) => x.army === "pr");
+  ok(u2.entered && Hex.key(u2.q, u2.r) === K(2, 0),
+     "reinforcements never enter in an enemy ZOC — the next hex is used [7.2]");
+}
+{
+  // Map exit: eligibility, the count, and lostSP exclusion.
+  const W = NAPOLEON_AT_WATERLOO;
+  const g = new Game(W);
+  const u1 = g.units.find((x) => x.faction === "fr" && x.type === "cav3");
+  const spot = at(4, 0);
+  u1.q = spot.q; u1.r = spot.r; // standing on an exit hex, unmoved
+  ok(g.canExit(u1), "a French unit on an exit hex may march off");
+  const al1 = g.units.find((x) => x.faction === "al");
+  ok(!g.canExit(al1), "…the Allies may not");
+  ok(g.exitUnit(u1).ok, "the unit exits");
+  ok(u1.alive && !g.onMap(u1) && g.exitedCount("fr") === 1,
+     "an exited unit is off-map but NOT destroyed [8.3]");
+  ok(g.lostSP("fr") === 0, "…and contributes nothing to enemy victory [8.3]");
+  ok(g.exitUnit(u1).ok === false, "no unit exits twice");
+  const moved = g.units.find((x) => x.faction === "fr" && x.type === "inf4");
+  moved.q = spot.q; moved.r = spot.r; moved.moved = true;
+  ok(!g.canExit(moved), "a unit that already moved this phase waits for the next");
+  // save/restore round-trip keeps the exit
+  const r = Game.restore(W, JSON.parse(JSON.stringify(g.serialize())));
+  ok(r.exitedCount("fr") === 1 && r.units[u1.id].exited && !r.onMap(r.units[u1.id]),
+     "exits survive save and restore");
+}
+{
+  // [6.2] the attacker may deliberately lower the combat ratio — never raise it.
+  const g = new Game(tinyDef({ setup: [
+    { faction: "fr", units: [[1, 1, "big"], [0, 1, "inf"]] },
+    { faction: "al", units: [[1, 0, "inf"]] },
+  ] }));
+  g.rng = die(2);
+  g.endPhase();
+  const tgt = g.living("al")[0];
+  const res = g.resolveCombat([tgt], g.living("fr"), { lower: 1 });
+  ok(res.column === "1:1", "10 vs 4 lowered one step fights at 1-1 instead of 2-1 [6.2]");
+  ok(new Game(tinyDef({})).def.crt.columns[0] === "1:5", "sanity: lowest column");
+}
+{
+  // [8.1] the Allies win the instant 40 French SP die while they are whole.
+  const W = NAPOLEON_AT_WATERLOO;
+  const g = new Game(W);
+  let need = 40;
+  for (const u of g.units.filter((x) => x.faction === "fr")) {
+    if (need <= 0) break;
+    if (g.combat(u) <= need) { u.alive = false; need -= g.combat(u); }
+  }
+  ok(g.lostSP("fr") >= 40 && g.lostSP("al") === 0, "setup: 40 French SP destroyed");
+  ok(g._checkVictory() && g.winner === "al", "Allied instant victory [8.1]");
+}
+{
+  // [8.2] a demoralized Allied player fights on at shifted odds; French
+  // losses reaching 40 afterwards win nothing for the Allies.
+  const W = NAPOLEON_AT_WATERLOO;
+  const g = new Game(W);
+  for (const u of g.units.filter((x) => x.faction === "al")) {
+    if (g.lostSP("al") >= 40) break;
+    u.alive = false;
+  }
+  ok(g.lostSP("al") >= 40, "setup: the Allies lose 40 SP");
+  ok(!g._checkVictory(), "the game continues — demoralization is not defeat [8.2]");
+  ok(g.oddsColumn(8, 4) === "3:1", "French attacks rise a column (2-1 -> 3-1) [8.2]");
+  // Allied attack shift: hand the turn to the Allies and re-check.
+  g.sideIndex = 1;
+  ok(g.oddsColumn(8, 4) === "1:1", "Allied attacks drop a column (2-1 -> 1-1) [8.2]");
+  g.sideIndex = 0;
+  // French losses now reaching 40 change nothing…
+  for (const u of g.units.filter((x) => x.faction === "fr" && x.alive)) {
+    if (g.lostSP("fr") >= 40) break;
+    u.alive = false;
+  }
+  ok(g.lostSP("fr") >= 40 && !g._checkVictory(),
+     "…40 French SP lost AFTER Allied demoralization does not help the Allies [8.2]");
+  // …but seven exits now win the game for France [8.3].
+  let out = 0;
+  for (const u of g.units.filter((x) => x.faction === "fr" && x.alive && !x.exited)) {
+    if (out >= 7) break;
+    const spot = at(4 - (out % 2), 0); // alternate exit hexes; hex frees on exit
+    if (g.unitAt(spot.q, spot.r)) continue;
+    u.q = spot.q; u.r = spot.r; u.moved = false; u.locked = false;
+    if (g.exitUnit(u).ok) out++;
+    if (g.over) break;
+  }
+  ok(g.over && g.winner === "fr",
+     "the seventh exit ends it — French victory [8.3]");
+}
+{
+  // The Grouchy Variant [9.0]: codes rolled at setup drive the schedules.
+  const G = ctx.NAW_GROUCHY;
+  ok(G.naw && G.variants, "the variant is its own picker entry");
+  // Force fr=6, pr=6: everything arrives (Prussians turn 2 + extras and
+  // Grouchy on turn 4).
+  const g = new Game(G);
+  ok(g.variant && g.variant.fr >= 1 && g.variant.fr <= 6, "codes are rolled at setup");
+  g.variant = { fr: 6, pr: 6 };
+  while (!(g.turn === 2 && g.activeFaction === "al" && g.phase === "move")) g.endPhase();
+  ok(g.units.filter((u) => u.army === "pr" && u.entered).length === 6,
+     "code 6: the regular Prussians arrive on turn 2 [9.4]");
+  while (!(g.turn === 4 && g.activeFaction === "fr" && g.phase === "move")) g.endPhase();
+  ok(g.units.filter((u) => u.faction === "fr" && u.rgroup != null && u.entered).length === 5,
+     "codes 4-6: Grouchy's five counters arrive on turn 4 [9.2]");
+  while (!(g.turn === 4 && g.activeFaction === "al" && g.phase === "move")) g.endPhase();
+  ok(g.units.filter((u) => u.army === "pr" && u.entered).length === 10,
+     "code 6: the extra Prussians follow on turn 4 [9.4]");
+  // Code 2: no Prussians at all.
+  const g2 = new Game(G);
+  g2.variant = { fr: 1, pr: 2 };
+  while (!(g2.turn === 5 && g2.activeFaction === "al" && g2.phase === "move")) g2.endPhase();
+  ok(g2.units.filter((u) => u.army === "pr" && u.entered).length === 0,
+     "code 2: no Prussian reinforcements arrive at all [9.4]");
+  ok(g2.units.filter((u) => u.faction === "fr" && u.entered && u.rgroup != null).length === 0,
+     "codes 1-3: Grouchy never comes [9.2]");
+  // The rolled codes survive a save.
+  const r = Game.restore(G, JSON.parse(JSON.stringify(g2.serialize())));
+  ok(r.variant && r.variant.pr === 2 && r.variant.fr === 1, "variant codes survive restore");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

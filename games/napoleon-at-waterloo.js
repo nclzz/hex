@@ -2,44 +2,53 @@
    napoleon-at-waterloo.js — NAPOLEON AT WATERLOO, June 18, 1815.
    A Napoleon At War series game: the Standard (common) rules come from
    the engine + NAW_COMMON.buildScenario(); everything in this file is the
-   battle's EXCLUSIVE rules — map, order of battle, the Prussian
-   reinforcement schedule, demoralization levels and victory conditions.
+   battle's OFFICIAL EXCLUSIVE rules — map, order of battle, the Prussian
+   reinforcement schedule, victory conditions and the Grouchy variant.
 
-   The map is drawn from the published NAW Waterloo map: open farmland cut
-   by the yellow road net (the Brussels highway north-south, the Nivelles
-   road southwest, the lateral to Braine-l'Alleud, the eastern road by
-   Ohain down to Plancenoit), with the villages in their historical places
-   and the Bois de Paris massed on the eastern edge. Roads are hexside
-   features (1/2 MP per road hex); there are no rivers at Waterloo.
+   Exclusive rules implemented (by case number of the game's rulebook):
+   - [7.0] The Allied player receives the Prussians during the Movement
+     Phase of GAME-TURN TWO, on non-woods hexes of the easternmost column;
+     entry costs 1 MP [7.1] and never lands in an enemy ZOC [7.2].
+   - [8.0] Victory: each side races to destroy 40 enemy Strength Points.
+     * [8.1] The Allies win the instant 40 French SP are destroyed while
+       fewer than 40 Allied SP have been lost.
+     * [8.2] Losing 40 SP DEMORALIZES the Allies: the game continues, but
+       every Allied attack drops one ratio column and every French attack
+       rises one. French losses reaching 40 afterwards changes nothing.
+     * [8.3] The French win the instant the Allies are demoralized AND
+       seven French units have marched off the indicated north-edge hexes
+       during French Movement Phases (exited units are not destroyed).
+     * [8.4] Anything else is a draw at the end of Game-Turn TEN. If both
+       sides hit 40 at the same instant (an Ee), the French win only if the
+       seven units are already off; otherwise the Allies do.
+   - [5.9] At Waterloo only WOODS block artillery lines of sight — towns do
+     not (they override the common chart's losBlock).
+   - [6.2] The attacker may deliberately lower the combat ratio before
+     rolling (engine `opts.lower`, offered in the combat card).
+   - [9.0] The Grouchy Variant (second picker entry): a random code per
+     side, rolled at setup, schedules extra French forces under Grouchy
+     and a greater/lesser/later Prussian contingent — all entering by the
+     same eastern edge [9.1].
 
-   Exclusive rules:
-   - The Allied player receives Prussian units from Game-Turn 3, entering on
-     non-Woods hexes of the easternmost hex column (Bülow toward Plancenoit;
-     Zieten's advance guard arrives later in the north-east).
-   - Demoralization: the French army breaks at 40 eliminated Strength Points
-     — but if the French have demoralized the Prussian army their own level
-     rises by 10. The Anglo-Allied army breaks at 26. Prussian losses never
-     count toward the Anglo-Allied level; demoralizing the Prussians alone
-     does not end the game (it emboldens the French instead).
-   - The French also win at the instant they hold Mont-Saint-Jean (the
-     Brussels road is cut); if night falls (end of Turn 10) with no army
-     demoralized, Wellington's line has held: Allied victory.
-
-   FIDELITY NOTE — the order of battle, the demoralization levels and the
-   terrain multipliers remain reconstructions at the series' scale (1 SP =
-   500-1,000 men); the Standard Rules themselves are implemented from the
-   published text. Exposed as the global `NAPOLEON_AT_WATERLOO`.
+   FIDELITY NOTE — cavalry (x-5) and artillery (3-3) movement/values and the
+   Grouchy contingent (5-4, 4-4, 4-4, 2-5, 3-3) follow the counters named in
+   the rulebook; the full order of battle, the guard values and the exact
+   Prussian counts remain reconstructions at the series' scale.
+   Simplifications: reinforcements auto-place at their earliest turn (the
+   voluntary delay of [7.3] is not offered), variant codes are rolled openly
+   at setup, and [6.5]'s required-bombardment displacement exception and
+   [6.8]'s voluntary gun fallback are not modeled.
+   Exposed as the globals `NAPOLEON_AT_WATERLOO` / `NAW_GROUCHY`.
    ========================================================================= */
 (function (global) {
   "use strict";
   const NAW = global.NAW_COMMON;
   const u = NAW.unit;
 
-  // Prussian counters carry their own colour so both of the Allied player's
-  // armies read at a glance (demoralization tracks them separately).
+  // Prussian counters carry their own colour so the Allied player's armies
+  // read at a glance.
   const PR = "#3f3f46";
 
-  // A road is a chain of hexes; each consecutive pair is one road hexside.
   const chain = (hexes) => {
     const pairs = [];
     for (let i = 1; i < hexes.length; i++) pairs.push([hexes[i - 1], hexes[i]]);
@@ -67,159 +76,230 @@
     [15, 16], [14, 16], [13, 16], [12, 16],
   ]);
 
-  const NAPOLEON_AT_WATERLOO = NAW.buildScenario({
-    id: "napoleon-at-waterloo",
-    title: "Napoleon at Waterloo",
-    blurb: "27×22 — June 18, 1815. Break Wellington before Blücher arrives.",
-    brief:
-      "The French must demoralize the Anglo-Allied army (26 SP lost) or take " +
-      "Mont-Saint-Jean before nightfall (Turn 10). The Allies win by " +
-      "demoralizing the French (40 SP) or simply holding on — from Turn 3 " +
-      "Prussian columns arrive on the eastern edge. Napoleon at War rules: " +
-      "combat between adjacent units is COMPULSORY, units starting next to " +
-      "the enemy are locked, retreats are one hex (a blocked retreat " +
-      "displaces a friend or destroys the unit), the victor of a hex may " +
-      "advance into it, roads move you at 1/2 MP per hex, and woods or " +
-      "towns block artillery lines of sight.",
-    maxTurns: 10,
+  // Shared exclusive content; `grouchy` switches on the [9.0] variant.
+  function makeWaterloo(grouchy) {
+    const def = {
+      id: grouchy ? "napoleon-at-waterloo-grouchy" : "napoleon-at-waterloo",
+      title: grouchy ? "Waterloo — Grouchy Variant" : "Napoleon at Waterloo",
+      blurb: grouchy
+        ? "27×22 — the same battle with secret reinforcement rolls: will Grouchy come?"
+        : "27×22 — June 18, 1815. Break Wellington before Blücher arrives.",
+      brief:
+        "Each side races to destroy 40 enemy Strength Points. The Allies win " +
+        "the instant they get there first; the French must instead break the " +
+        "Allies AND march SEVEN units off the marked north-edge hexes (▲) " +
+        "during their Movement Phases. A broken army fights on at shifted " +
+        "odds: its attacks drop one column, the enemy's rise one. Anything " +
+        "else is a draw at nightfall (Turn 10). The Prussians reach the " +
+        "eastern edge on Turn 2" +
+        (grouchy ? " — unless the pre-game reinforcement rolls say otherwise, " +
+                   "and Grouchy's French corps may appear behind them" : "") +
+        ". Only woods block artillery sight lines here; an attacker may also " +
+        "deliberately lower his combat odds before rolling.",
+      maxTurns: 10,
 
-    // CS-MA at series scale. Artillery bombards at 2 hexes (@2).
-    unitTypes: {
-      inf4:  u("Line Infantry",   "I", 4, 4),
-      inf3:  u("Militia",         "I", 3, 4),
-      gde5:  u("Foot Guards",     "G", 5, 4),
-      gdi6:  u("Guard Infantry",  "G", 6, 4),
-      gd7:   u("Old Guard",       "G", 7, 4),
-      cav3:  u("Cavalry",         "C", 3, 8),
-      art5:  u("Grand Battery",   "A", 5, 3, { range: 2 }),
-      art4:  u("Field Artillery", "A", 4, 3, { range: 2 }),
-      // Prussian counters (Allied player, army "pr")
-      pinf4: u("Prussian Infantry", "I", 4, 4, { color: PR }),
-      pinf3: u("Landwehr",          "I", 3, 4, { color: PR }),
-      pcav2: u("Prussian Cavalry",  "C", 2, 8, { color: PR }),
-      part3: u("Prussian Artillery","A", 3, 3, { range: 2, color: PR }),
-    },
+      // CS-MA per the rulebook's counters where named (cavalry x-5,
+      // artillery 3-3 @2); guards remain a reconstruction.
+      unitTypes: {
+        inf5:  u("Line Infantry",   "I", 5, 4),
+        inf4:  u("Line Infantry",   "I", 4, 4),
+        inf3:  u("Militia",         "I", 3, 4),
+        gde5:  u("Foot Guards",     "G", 5, 4),
+        gdi6:  u("Guard Infantry",  "G", 6, 4),
+        gd7:   u("Old Guard",       "G", 7, 4),
+        cav3:  u("Cavalry",         "C", 3, 5),
+        cav2:  u("Light Cavalry",   "C", 2, 5),
+        art4:  u("Grand Battery",   "A", 4, 3, { range: 2 }),
+        art3:  u("Field Artillery", "A", 3, 3, { range: 2 }),
+        // Prussian counters (Allied player, army "pr")
+        pinf5: u("Prussian Infantry", "I", 5, 4, { color: PR }),
+        pinf4: u("Prussian Infantry", "I", 4, 4, { color: PR }),
+        pcav3: u("Prussian Cavalry",  "C", 3, 5, { color: PR }),
+        part3: u("Prussian Artillery","A", 3, 3, { range: 2, color: PR }),
+      },
 
-    factions: [
-      { id: "fr", name: "French", short: "FRENCH", color: "#2b5fa8", dark: "#1c3f70" },
-      { id: "al", name: "Allies", short: "ALLIES", color: "#b23a3a", dark: "#7d2626" },
-    ],
+      factions: [
+        { id: "fr", name: "French", short: "FRENCH", color: "#2b5fa8", dark: "#1c3f70" },
+        { id: "al", name: "Allies", short: "ALLIES", color: "#b23a3a", dark: "#7d2626" },
+      ],
 
-    // North at the top, from the published map: Waterloo village (10,1) and
-    // Ransbèche (19,1) on the north edge, Ohain (24,4) and Le Mesnil (6,4),
-    // Mont-Saint-Jean (10,5, the objective), Merbe-Braine (7,7),
-    // Braine-l'Alleud (3,9), La Haye Sainte (12,9) and Hougoumont (9,11) as
-    // chateaux, La Haye (17,9) / Papelotte (17,10) / Frichermont (20,9) in
-    // the east, Plancenoit (16,14), Maison du Roi (12,17), Maransart
-    // (23,15); the Bois de Paris masses on the eastern flank.
-    //     0         1         2
-    //     012345678901234567890123456
-    map: [
-      "..............ww...........", //  0
-      "..........t...ww...t.......", //  1  Waterloo · Ransbèche
-      "...........................", //  2
-      ".....................ww....", //  3
-      "......t.................t..", //  4  Le Mesnil · Ohain
-      "..........t................", //  5  MONT-SAINT-JEAN ★
-      "..w...........w............", //  6
-      ".......t................w..", //  7  Merbe-Braine
-      "...........................", //  8
-      "...t........c....t..t......", //  9  Braine-l'Alleud · La Haye Sainte · La Haye · Frichermont
-      ".................t.........", // 10  Papelotte
-      ".........c..........w......", // 11  Hougoumont
-      "........Ww.........Www.....", // 12  W = Woods-Road (Nivelles rd · east rd)
-      ".........w..........www....", // 13  Bois de Paris ->
-      "................t....ww....", // 14  Plancenoit
-      ".......................t...", // 15  Maransart
-      "........................ww.", // 16
-      "............t....ww......w.", // 17  Maison du Roi
-      "...ww............ww........", // 18
-      "....ww..........ww.........", // 19
-      ".....w.....................", // 20
-      "...........................", // 21
-    ],
+      // [5.9] Exclusive override: at Waterloo towns do NOT block artillery
+      // lines of sight — only woods (and woods-road) do.
+      terrain: {
+        "t": { name: "Building", color: "#b9b2a6", moveCost: 1, defMult: 2 },
+        "c": { name: "Chateau",  color: "#9a8f9c", moveCost: 1, defMult: 2 },
+      },
 
-    hexsides: [
-      { type: "road", pairs: [].concat(
-        BRUSSELS_ROAD, TOP_EAST_ROAD, WEST_ROAD, NIVELLES_ROAD, EAST_ROAD) },
-    ],
+      // North at the top, from the published map (see the map comment in
+      // earlier revisions for the named places).
+      //     0         1         2
+      //     012345678901234567890123456
+      map: [
+        "..............ww...........", //  0  ▲ exit hexes westward of the woods
+        "..........t...ww...t.......", //  1  Waterloo · Ransbèche
+        "...........................", //  2
+        ".....................ww....", //  3
+        "......t.................t..", //  4  Le Mesnil · Ohain
+        "..........t................", //  5  Mont-Saint-Jean
+        "..w...........w............", //  6
+        ".......t................w..", //  7  Merbe-Braine
+        "...........................", //  8
+        "...t........c....t..t......", //  9  Braine-l'Alleud · La Haye Sainte · La Haye · Frichermont
+        ".................t.........", // 10  Papelotte
+        ".........c..........w......", // 11  Hougoumont
+        "........Ww.........Www.....", // 12  W = Woods-Road
+        ".........w..........www....", // 13  Bois de Paris ->
+        "................t....ww....", // 14  Plancenoit
+        ".......................t...", // 15  Maransart
+        "........................ww.", // 16
+        "............t....ww......w.", // 17  Maison du Roi
+        "...ww............ww........", // 18
+        "....ww..........ww.........", // 19
+        ".....w.....................", // 20
+        "...........................", // 21
+      ],
 
-    objectives: [{ col: 10, row: 5, owner: "fr" }], // Mont-Saint-Jean
+      hexsides: [
+        { type: "road", pairs: [].concat(
+          BRUSSELS_ROAD, TOP_EAST_ROAD, WEST_ROAD, NIVELLES_ROAD, EAST_ROAD) },
+      ],
 
-    setup: [
-      { faction: "al", army: "anglo", units: [
-        // Wellington's line south of Mont-Saint-Jean
-        [7, 8, "inf4"], [9, 8, "inf4"], [10, 8, "gde5"], [11, 8, "inf4"],
-        [13, 8, "inf4"], [15, 8, "inf4"], [16, 9, "inf4"],
-        [8, 7, "art4"], [14, 7, "art4"],
-        // forward garrisons
-        [9, 11, "inf3"],   // Hougoumont
-        [12, 9, "inf3"],   // La Haye Sainte
-        [17, 10, "inf3"],  // Papelotte
-        // cavalry reserve behind the crest
-        [9, 6, "cav3"], [13, 6, "cav3"],
-      ] },
-      { faction: "fr", units: [
-        // grand battery on the French ridge
-        [11, 12, "art5"], [12, 12, "art5"], [13, 12, "art5"],
-        // d'Erlon's corps (east) and Reille's corps (west)
-        [14, 12, "inf4"], [15, 12, "inf4"], [16, 12, "inf4"], [17, 12, "inf4"],
-        [10, 13, "inf4"], [11, 13, "inf4"], [12, 13, "inf4"],
-        // Lobau's reserve corps
-        [14, 13, "inf4"],
-        // the cavalry
-        [8, 14, "cav3"], [10, 14, "cav3"], [16, 13, "cav3"], [18, 12, "cav3"],
-        // the Guard, up the Brussels road
-        [11, 14, "gdi6"], [12, 14, "gd7"], [13, 14, "gdi6"],
-      ] },
-    ],
+      // [8.3] The French exit: the arrowed hexes of the north edge.
+      exitHexes: { faction: "fr", target: 7,
+                   hexes: [[2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0],
+                           [8, 0], [9, 0], [10, 0]] },
 
-    // EXCLUSIVE RULE — the Prussians. Non-woods hexes of the easternmost
-    // column, in arrival order: Bülow's IV Corps from Game-Turn 3 heading
-    // for Plancenoit through the Bois de Paris, Zieten's advance guard from
-    // Game-Turn 6 by Ohain.
-    reinforcements: [
-      { turn: 3, faction: "al", army: "pr",
-        entry: [[26, 10], [26, 11], [26, 12], [26, 13], [26, 14]],
-        units: ["pinf4", "pinf4", "pinf3", "pcav2", "part3"] },
-      { turn: 6, faction: "al", army: "pr",
-        entry: [[26, 5], [26, 6], [26, 7]],
-        units: ["pinf4"] },
-    ],
+      setup: [
+        { faction: "al", army: "anglo", units: [
+          // Wellington's line south of Mont-Saint-Jean
+          [7, 8, "inf4"], [9, 8, "inf4"], [10, 8, "gde5"], [11, 8, "inf4"],
+          [13, 8, "inf4"], [15, 8, "inf4"], [16, 9, "inf4"],
+          [8, 7, "art3"], [14, 7, "art3"],
+          // forward garrisons
+          [9, 11, "inf3"],   // Hougoumont
+          [12, 9, "inf3"],   // La Haye Sainte
+          [17, 10, "inf3"],  // Papelotte
+          // cavalry reserve behind the crest
+          [9, 6, "cav3"], [13, 6, "cav3"],
+        ] },
+        { faction: "fr", units: [
+          // grand battery on the French ridge
+          [11, 12, "art4"], [12, 12, "art4"], [13, 12, "art4"],
+          // d'Erlon's corps (east) and Reille's corps (west)
+          [14, 12, "inf4"], [15, 12, "inf4"], [16, 12, "inf4"], [17, 12, "inf4"],
+          [10, 13, "inf4"], [11, 13, "inf4"], [12, 13, "inf4"],
+          // Lobau's reserve corps
+          [14, 13, "inf4"],
+          // the cavalry
+          [8, 14, "cav3"], [10, 14, "cav3"], [16, 13, "cav3"], [18, 12, "cav3"],
+          // the Guard, up the Brussels road
+          [11, 14, "gdi6"], [12, 14, "gd7"], [13, 14, "gdi6"],
+        ] },
+      ],
 
-    // EXCLUSIVE RULE — demoralization levels. The French level rises by 10
-    // once they have demoralized the Prussian army; the Prussian entry is
-    // tracked but does not end the game by itself.
-    demoralization: [
-      { faction: "fr", name: "French Army", short: "FR",
-        level: (g) => 40 + (g.lostSP("al", "pr") >= 12 ? 10 : 0) },
-      { faction: "al", army: "anglo", name: "Anglo-Allied Army", short: "ANG", level: 26 },
-      { faction: "al", army: "pr", name: "Prussian Army", short: "PRU",
-        level: 12, endsGame: false },
-    ],
+      // [8.2]-style ticker data only — neither level ends the game by itself.
+      demoralization: [
+        { faction: "fr", name: "French Army", short: "FR", level: 40, endsGame: false },
+        { faction: "al", name: "Allied Armies", short: "ALL", level: 40, endsGame: false },
+      ],
 
-    victory(game, opts) {
-      const dem = NAW.demoralizationVictory(game);
-      if (dem) return dem;
-      // Elimination — reserves still off-map count as alive.
-      for (const f of game.factions) {
-        if (!game.units.some((x) => x.alive && x.faction === f.id)) {
-          const other = game.factions.find((x) => x.id !== f.id);
-          return { winner: other.id, reason: `${f.name} army destroyed` };
+      rules: {
+        // [8.2] Once the Allies have lost 40 SP their attacks drop one ratio
+        // column and French attacks rise one. (Base mapping = round down.)
+        oddsColumn(game, atk, def) {
+          const cols = game.def.crt.columns;
+          let col = cols[0];
+          const ratio = atk / def;
+          for (const c of cols) {
+            const [a, b] = c.split(":").map(Number);
+            if (ratio + 1e-9 >= a / b) col = c;
+          }
+          if (game.lostSP("al") >= 40) {
+            col = NAW.shiftColumn(game, col, game.activeFaction === "fr" ? 1 : -1);
+          }
+          return col;
+        },
+      },
+
+      victory(game, opts) {
+        const frL = game.lostSP("fr"), alL = game.lostSP("al");
+        const st = game.scenarioState || (game.scenarioState = {});
+        // Remember whether the Allies broke while the French were whole —
+        // afterwards, French losses reaching 40 mean nothing [8.2].
+        if (alL >= 40 && frL < 40 && !st.alliedBrokeFirst) st.alliedBrokeFirst = true;
+        const out = game.exitedCount("fr");
+        if (frL >= 40) {
+          if (alL < 40)
+            return { winner: "al",
+                     reason: "Forty French Strength Points destroyed — the Grande Armée breaks first." }; // [8.1]
+          if (!st.alliedBrokeFirst) // both hit 40 at the same instant [8.4]
+            return out >= 7
+              ? { winner: "fr", reason: "Both armies break together — but seven French units are already on the Brussels road." }
+              : { winner: "al", reason: "Both armies break together — and the road north is still barred." };
         }
-      }
-      const obj = game.objectives[0];
-      const holder = game.unitAt(obj.q, obj.r);
-      if (holder && holder.faction === "fr")
-        return { winner: "fr",
-                 reason: "The French hold Mont-Saint-Jean — the Brussels road is cut!" };
-      if (opts && opts.timeout)
-        return { winner: "al",
-                 reason: "Night falls. Wellington's line has held, and the Prussians are on the field." };
-      return null;
-    },
-  });
+        if (alL >= 40 && out >= 7)
+          return { winner: "fr",
+                   reason: "The Allies are broken and seven French units have marched off north — the road to Brussels is open." }; // [8.3]
+        // Total elimination still decides (exited units are not destroyed).
+        for (const f of game.factions) {
+          if (!game.units.some((x) => x.alive && !x.exited && x.faction === f.id)) {
+            const other = game.factions.find((x) => x.id !== f.id);
+            return { winner: other.id, reason: `${f.name} army destroyed` };
+          }
+        }
+        if (opts && opts.timeout)
+          return { winner: null,
+                   reason: "Nightfall, Turn 10 — a draw, and in the history books an Allied moral victory." }; // [8.4]
+        return null;
+      },
+    };
+
+    // Reinforcements. The regular Prussian contingent [7.0] splits into an
+    // advance guard + the rest so the [9.4] variant codes can stagger them.
+    const east = (rows) => rows.map((r) => [26, r]);
+    const advanceGuard = { faction: "al", army: "pr",
+      entry: east([10, 11, 12, 13, 14]),
+      units: ["pinf5", "pinf4", "pcav3", "part3"] };
+    const restOfCorps = { faction: "al", army: "pr",
+      entry: east([9, 10, 11, 12, 13, 14, 15]),
+      units: ["pinf5", "pinf4"] };
+    if (!grouchy) {
+      def.reinforcements = [
+        Object.assign({ turn: 2 }, advanceGuard),
+        Object.assign({ turn: 2 }, restOfCorps),
+      ];
+    } else {
+      // [9.0] Pre-game codes, one per side, rolled at setup.
+      def.variants = { roll: (g) => ({
+        fr: 1 + Math.floor(g.rng() * 6),
+        pr: 1 + Math.floor(g.rng() * 6),
+      }) };
+      const pr = (g) => g.variant.pr;
+      def.reinforcements = [
+        // [9.4] 1: turn 2 · 2: never · 3: turn 4 · 4: reduced turn 2 ·
+        //       5: turn 2 (+extras turn 4) · 6: everything turns 2 and 4
+        Object.assign({ turnFor: (g) =>
+          ({ 1: 2, 2: null, 3: 4, 4: 2, 5: 2, 6: 2 })[pr(g)] }, advanceGuard),
+        Object.assign({ turnFor: (g) =>
+          ({ 1: 2, 2: null, 3: 4, 4: null, 5: 2, 6: 2 })[pr(g)] }, restOfCorps),
+        // extra Prussians for codes 5 and 6 (entering north of the first wave)
+        { faction: "al", army: "pr", entry: east([4, 5, 6, 7, 8]),
+          units: ["pinf5", "pinf4", "pcav3", "part3"],
+          turnFor: (g) => (pr(g) >= 5 ? 4 : null) },
+        // [9.2] Grouchy's French: codes 4-6 arrive on Game-Turn FOUR with the
+        // rulebook's counters (5-4, two 4-4, 2-5, 3-3), by the same edge [9.1].
+        { faction: "fr", entry: east([16, 17, 18, 19, 20]),
+          units: ["inf5", "inf4", "inf4", "cav2", "art3"],
+          turnFor: (g) => (g.variant.fr >= 4 ? 4 : null) },
+      ];
+    }
+    return NAW.buildScenario(def);
+  }
+
+  const NAPOLEON_AT_WATERLOO = makeWaterloo(false);
+  const NAW_GROUCHY = makeWaterloo(true);
 
   global.NAPOLEON_AT_WATERLOO = NAPOLEON_AT_WATERLOO;
-  (global.HEX_SCENARIOS = global.HEX_SCENARIOS || []).push(NAPOLEON_AT_WATERLOO);
+  global.NAW_GROUCHY = NAW_GROUCHY;
+  (global.HEX_SCENARIOS = global.HEX_SCENARIOS || []).push(NAPOLEON_AT_WATERLOO, NAW_GROUCHY);
 })(typeof window !== "undefined" ? window : globalThis);
