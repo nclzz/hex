@@ -15,8 +15,8 @@
    immunity at range — ARE the engine's built-in behavior (src/engine.js);
    there is no other ruleset. This file layers the series' DATA on top:
    - The CRT: odds rounded down to a column, die 1-6, results Ae/Ar/Ex/Dr/De
-     (no "no effect"); worse than 1-3 is an automatic Ae, better than 5-1 an
-     automatic De.
+     (no "no effect"); attacks worse than 1-5 are treated as 1-5 (all Ae),
+     better than 6-1 as 6-1 (all De).
    - The standard terrain chart.
    - Demoralization helpers: when an army's cumulative eliminated Strength
      Points reach its Demoralization Level the game ends at that instant and
@@ -32,11 +32,13 @@
   "use strict";
 
   /* ------------------------------- CRT ----------------------------------- */
-  // The OFFICIAL Combat Results Table (Combat Ratios, Attacker to Defender
-  // Strength). Rows are die 1..6, columns 1-5 through 6-1. Per the chart's
-  // note, attacks worse than 1-5 are treated as 1-5 and attacks better than
-  // 6-1 as 6-1 — the engine's round-down column mapping clamps to the outer
-  // columns, which encodes exactly that.
+  // The OFFICIAL Combat Results Table [6.0] (Combat Ratios, Attacker to
+  // Defender Strength), transcribed cell for cell from the printed chart.
+  // Rows are die 1..6, columns 1-5 through 6-1. Per the chart's note, attacks
+  // worse than 1-5 are treated as 1-5 and attacks better than 6-1 as 6-1 —
+  // the engine's round-down column mapping clamps to the outer columns, which
+  // encodes exactly that. The chart prints the Exchange result as "Ee"; the
+  // engine's code for it is "Ex".
   const CRT = {
     columns: ["1:5", "1:4", "1:3", "1:2", "1:1", "2:1", "3:1", "4:1", "5:1", "6:1"],
     table: {
@@ -44,12 +46,12 @@
       "1:5": ["Ae", "Ae", "Ae", "Ae", "Ae", "Ae"],
       "1:4": ["Ar", "Ae", "Ae", "Ae", "Ae", "Ae"],
       "1:3": ["Ar", "Ar", "Ae", "Ae", "Ae", "Ae"],
-      "1:2": ["Dr", "Ar", "Ar", "Ae", "Ar", "Ar"],
+      "1:2": ["Dr", "Ar", "Ar", "Ar", "Ar", "Ae"],
       "1:1": ["Dr", "Dr", "Dr", "Ar", "Ar", "Ar"],
       "2:1": ["Dr", "Dr", "Dr", "Dr", "Ex", "Ar"],
       "3:1": ["De", "Dr", "Dr", "Dr", "Dr", "Ex"],
-      "4:1": ["De", "Dr", "Dr", "Dr", "Ex", "Ex"],
-      "5:1": ["De", "De", "De", "Dr", "Ex", "Ex"],
+      "4:1": ["De", "De", "Dr", "Dr", "Ex", "Ex"],
+      "5:1": ["De", "De", "De", "De", "Ex", "Ex"],
       "6:1": ["De", "De", "De", "De", "De", "De"],
     },
   };

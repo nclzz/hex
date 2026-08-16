@@ -80,6 +80,25 @@ const die = (n) => () => (n - 1) / 6 + 0.001; // rng that yields die = n
   // Official chart shape (Combat Ratios, Attacker to Defender Strength).
   ok(NAW_COMMON.CRT.columns.join(" ") === "1:5 1:4 1:3 1:2 1:1 2:1 3:1 4:1 5:1 6:1",
      "the official columns run 1-5 through 6-1 (no 3-2)");
+  // Every cell of the printed chart [6.0], row by row as it reads on paper
+  // (the chart's "Ee" is this engine's "Ex"). The table is pure data the
+  // rules can't re-derive, so it is pinned cell for cell.
+  {
+    const PRINTED = [
+      //     1-5   1-4   1-3   1-2   1-1   2-1   3-1   4-1   5-1   6-1
+      /*1*/ "Ae    Ar    Ar    Dr    Dr    Dr    De    De    De    De",
+      /*2*/ "Ae    Ae    Ar    Ar    Dr    Dr    Dr    De    De    De",
+      /*3*/ "Ae    Ae    Ae    Ar    Dr    Dr    Dr    Dr    De    De",
+      /*4*/ "Ae    Ae    Ae    Ar    Ar    Dr    Dr    Dr    De    De",
+      /*5*/ "Ae    Ae    Ae    Ar    Ar    Ex    Dr    Ex    Ex    De",
+      /*6*/ "Ae    Ae    Ae    Ae    Ar    Ar    Ex    Ex    Ex    De",
+    ];
+    PRINTED.forEach((row, i) => {
+      const coded = NAW_COMMON.CRT.columns.map((c) => NAW_COMMON.CRT.table[c][i]);
+      ok(coded.join(" ") === row.trim().split(/\s+/).join(" "),
+         `CRT die ${i + 1} matches the printed chart [6.0]`);
+    });
+  }
   ok(NAW_COMMON.CRT.table["1:5"].every((c) => c === "Ae"), "1-5 is all Ae");
   ok(NAW_COMMON.CRT.table["6:1"].every((c) => c === "De"), "6-1 is all De");
   ok(NAW_COMMON.CRT.table["1:4"][0] === "Ar",

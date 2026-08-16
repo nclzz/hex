@@ -124,7 +124,8 @@ on top of the Standard Rules; the app enforces all of them):
   common Terrain Key).
 - **The attacker may voluntarily lower the combat ratio** before rolling
   (the "Lower odds" control on the battle card), e.g. to fish for an
-  Exchange.
+  Exchange. The engine accepts any step down; the control stops at 1-1,
+  since every column below even odds is strictly worse for the attacker.
 - **The Grouchy Variant** (its own entry on the start screen): each side
   secretly rolls a code 1–6 before play. The French code decides whether
   Grouchy's five counters (5-4, 4-4, 4-4, 2-5, 3-3) arrive on Turn 4 from
