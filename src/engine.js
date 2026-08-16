@@ -224,6 +224,10 @@
       if (!t || t.passable === false) return Infinity;
       const edge = this.edgeBetween(fromHex, toHex);
       if (edge === "river") return Infinity; // crossable only at bridges [5.24]
+      // Woods-Road hexes may be entered or exited only through a hexside
+      // crossed by a road (Terrain Key).
+      const ft0 = this.terrainAt(fromHex.q, fromHex.r);
+      if (((ft0 && ft0.roadOnly) || t.roadOnly) && edge !== "road") return Infinity;
       if (edge === "road") return 0.5;       // regardless of terrain [5.22]
       if (edge === "trail") return 1;        // regardless of terrain [5.23]
       let cost = t.moveCost;                 // bridge: no surcharge [5.24]
@@ -365,12 +369,14 @@
     retreat(unit, threat, _depth) {
       const depth = _depth || 0;
       if (depth > 8) return false; // chain sanity bound
+      const from = this.hex(unit.q, unit.r);
       const options = [];
       for (const nb of Hex.neighbors(unit)) {
         const h = this.hex(nb.q, nb.r);
         if (!h) continue;
-        if (this.terrain[h.terrain].passable === false) continue;
-        if (this.edgeBetween(unit, nb) === "river") continue;      // [7.72]
+        // prohibited hexes and hexsides bind retreats exactly like movement
+        // (impassable terrain, rivers, road-bound Woods-Road hexes) [7.72]
+        if (!Number.isFinite(this.stepCost(unit, from, h))) continue;
         if (this.isEnemyZOC(unit.faction, nb.q, nb.r)) continue;   // [7.71/7.72]
         const occ = this.unitAt(nb.q, nb.r);
         if (occ && occ.faction !== unit.faction) continue;         // [5.12]
@@ -548,6 +554,10 @@
       if (!hx) return { ok: false, reason: "not a vacated hex" };
       if (this.unitAt(hx.q, hx.r)) return { ok: false, reason: "hex occupied" };
       if (!this.meleeAdjacent(unit, hx)) return { ok: false, reason: "unit not adjacent" };
+      // The step itself must be crossable (no rivers, no road-bound woods
+      // without the road) — advances ignore only ZOCs [7.74].
+      if (!Number.isFinite(this.stepCost(unit, this.hex(unit.q, unit.r), this.hex(hx.q, hx.r))))
+        return { ok: false, reason: "hexside prohibited" };
       unit.q = hx.q; unit.r = hx.r;
       this.pendingAdvance = null;
       this.events.emit("advance", { unit });

@@ -768,6 +768,87 @@ function corridorDef(over) {
   ok(g.phase === "combat", "…and combat returns with it");
 }
 
+/* --- the official Terrain Key ------------------------------------------------ */
+{
+  // Woods: entry prohibited.
+  const g = new Game(tinyDef({
+    map: ["........", ".w......", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 2, "inf"]] },
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  }));
+  ok(!g.reachable(g.living("fr")[0]).has(K(1, 1)),
+     "Woods are prohibited to movement (Terrain Key)");
+}
+{
+  // Woods-Road: entered or exited only through a hexside crossed by a road.
+  const mk = (withRoad) => new Game(tinyDef({
+    map: ["........", ".W......", "........", "........", "........", "........"],
+    hexsides: withRoad ? [{ type: "road", pairs: [[[1, 2], [1, 1]], [[1, 1], [1, 0]]] }] : [],
+    setup: [
+      { faction: "fr", units: [[1, 2, "inf"]] },
+      { faction: "al", units: [[7, 5, "inf"]] },
+    ],
+  }));
+  const noRoad = mk(false);
+  ok(!noRoad.reachable(noRoad.living("fr")[0]).has(K(1, 1)),
+     "a Woods-Road hex cannot be entered off-road");
+  const road = mk(true);
+  const reach = road.reachable(road.living("fr")[0]);
+  ok(reach.has(K(1, 1)), "…but the road hexside lets a unit in");
+  ok(reach.has(K(1, 0)), "…and out the far side, along the road");
+  const W = road.hex(at(1, 1).q, at(1, 1).r), off = road.hex(at(2, 1).q, at(2, 1).r);
+  ok(!Number.isFinite(road.stepCost(road.living("fr")[0], W, off)),
+     "stepping OUT of it off-road is still prohibited");
+}
+{
+  // Retreats obey the same prohibition: only exits into Woods-Road without
+  // a road hexside leave the defender nowhere to go.
+  const g = new Game(tinyDef({
+    terrain: { "#": { name: "Wall", color: "#333", moveCost: Infinity, defMult: 1, passable: false } },
+    map: ["##W#####", "#..#####", "########", "########", "########", "########"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "big"]] },
+      { faction: "al", units: [[2, 1, "inf"]] },
+    ],
+  }));
+  const D = g.living("al")[0];
+  g.applyResult("Dr", [D], [g.living("fr")[0]]);
+  ok(!D.alive, "a defender whose only exit is off-road Woods-Road is eliminated");
+}
+{
+  // Bombardment may fire INTO a Woods-Road hex (only intervening hexes block).
+  const g = new Game(tinyDef({
+    map: ["........", ".W......", "........", "........", "........", "........"],
+    hexsides: [{ type: "road", pairs: [[[0, 0], [1, 1]]] }],
+    setup: [
+      { faction: "al", units: [[0, 0, "inf"]] },
+      { faction: "fr", units: [[1, 3, "art"]] },
+    ],
+  }));
+  // move the enemy INTO the Woods-Road hex via its road, then bombard it
+  const al = g.living("al")[0];
+  const a11 = at(1, 1); al.q = a11.q; al.r = a11.r;
+  g.endPhase();
+  ok(g.lineOfSight(g.living("fr")[0], al), "the target's own Woods-Road hex never blocks");
+  ok(g.resolveCombat([al], g.living("fr")).ok,
+     "artillery may bombard INTO a Woods-Road hex (Terrain Key note)");
+}
+{
+  // Buildings (and chateaux) DOUBLE the defender — no more, no less.
+  const g = new Game(tinyDef({
+    map: [".tc.....", "........", "........", "........", "........", "........"],
+    setup: [
+      { faction: "fr", units: [[1, 1, "big"]] },
+      { faction: "al", units: [[1, 0, "big"], [2, 0, "big"]] },
+    ],
+  }));
+  const [town, chateau] = g.living("al");
+  ok(g.defenderStrength(town) === 12, "a Building doubles the defender");
+  ok(g.defenderStrength(chateau) === 12, "a chateau is a Building — doubled, not tripled");
+}
+
 /* --- the rules' "Examples of Attacks" sheet --------------------------------- */
 // Each case reproduces one illustrated situation and checks the odds column
 // (and legality) the sheet prints beside it.

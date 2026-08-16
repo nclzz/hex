@@ -55,10 +55,13 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
   hexes around an enemy unit (its ZOC) stops a unit dead — and a unit that
   **starts** its Movement Phase in an enemy ZOC is locked in place. The only
   ways out are winning, retreating, or dying.
-- **Hexside terrain.** Roads move you at **½ MP per hex** (trails at 1),
-  streams cost +2 MP to cross, and **rivers** can be crossed only at
-  bridges — an unbridged river hexside also blocks ZOCs and all combat
-  except bombardment.
+- **Terrain (the official key).** Clear costs 1 MP; **woods are prohibited
+  to movement** and block artillery lines of sight; **Woods-Road** hexes may
+  be entered or exited only through a road hexside; **buildings double the
+  defender**. Roads move you at **½ MP per hex** (trails at 1), streams cost
+  +2 MP to cross, and **rivers** can be crossed only at bridges — an
+  unbridged river hexside also blocks ZOCs and all combat except
+  bombardment.
 - **Combat is compulsory.** Every enemy unit adjacent to your units must be
   attacked, and every one of your units adjacent to an enemy must attack —
   each unit once per phase, each defender attacked once. You choose the
@@ -220,14 +223,14 @@ Rules text** (sections 4.0–10.0: sequence, movement incl. friendly
 pass-through and hexside costs, Zones of Control incl. rivers, mandatory and
 multi-hex combat, retreats with displacement, advances for either victor,
 the artillery rules with Line of Sight, and night game-turns). The
-**Combat Results Table is the official chart** (columns 1-5 … 6-1 with the
-clamp note), and the Waterloo map is drawn from the published game map.
-Still **reconstructions**, all plain data in one place each, easy to true
-up against the published charts:
+**Combat Results Table and the Terrain Key are the official charts**
+(clear / woods-prohibited / road-bound Woods-Road / doubling buildings),
+and the Waterloo map is drawn from the published game map. Still
+**reconstructions**, all plain data in one place each:
 
-- the **Terrain Effects Chart** numbers
-  (`games/napoleon-at-war-common.js`) — the rules text refers to a chart
-  that isn't part of it;
+- the **Slope and Marsh** terrain values
+  (`games/napoleon-at-war-common.js`) — used by the two non-Waterloo
+  scenarios, not part of the game's key;
 - the Waterloo **order of battle** and **demoralization levels**
   (`games/napoleon-at-waterloo.js`), sized to the series' scale.
 

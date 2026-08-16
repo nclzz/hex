@@ -127,7 +127,7 @@
       "...t........c....t..t......", //  9  Braine-l'Alleud · La Haye Sainte · La Haye · Frichermont
       ".................t.........", // 10  Papelotte
       ".........c..........w......", // 11  Hougoumont
-      "........ww.........www.....", // 12
+      "........Ww.........Www.....", // 12  W = Woods-Road (Nivelles rd · east rd)
       ".........w..........www....", // 13  Bois de Paris ->
       "................t....ww....", // 14  Plancenoit
       ".......................t...", // 15  Maransart

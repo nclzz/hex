@@ -23,11 +23,10 @@
      the other player wins.
    - buildScenario(), night-turn scheduling, and the unit-type factory.
 
-   FIDELITY NOTE — the CRT below is the OFFICIAL published chart. The
-   terrain chart's movement costs and defense multipliers remain a careful
-   reconstruction (the rules text refers to a Terrain Effects Chart that is
-   published separately). They are plain data — correct them here if you
-   have the published chart, and every scenario inherits the fix.
+   FIDELITY NOTE — the CRT and the terrain chart below are the OFFICIAL
+   published charts (Slope and Marsh excepted: they serve the non-Waterloo
+   scenarios and are not part of the key). All plain data — every scenario
+   inherits any correction made here.
    ========================================================================= */
 (function (global) {
   "use strict";
@@ -61,20 +60,26 @@
   }
 
   /* ------------------------- common terrain chart ------------------------ */
-  // The series' standard terrain (multipliers are a reconstruction — see
-  // FIDELITY NOTE above). moveCost = MPs to ENTER; defMult = defender
-  // strength multiplier; losBlock marks Forest/Town as bombardment
-  // Line-of-Sight blockers [8.33]; slope drives the downhill hexside
-  // surcharge [5.26]. Scenarios may add codes or override any of these.
-  // Rivers, streams, bridges, roads and trails are HEXSIDE features
-  // (def.hexsides), not hex terrain.
+  // The OFFICIAL Terrain Key: Clear costs 1 MP with no combat effect; Woods
+  // are prohibited to movement and block artillery Lines of Sight;
+  // Woods-Road hexes cost 1 MP but may be entered or exited only through a
+  // hexside crossed by a road (roadOnly), and block LOS; Buildings cost
+  // 1 MP and DOUBLE the defender. Slope and Marsh serve the non-Waterloo
+  // scenarios and remain reconstructions (they are not in the key).
+  // moveCost = MPs to ENTER; defMult = defender strength multiplier;
+  // losBlock = blocks bombardment LOS [8.33]; slope drives the downhill
+  // hexside surcharge [5.26]. Rivers, streams, bridges, roads and trails
+  // are HEXSIDE features (def.hexsides), not hex terrain.
   const terrain = {
-    ".": { name: "Clear",   color: "#cfe3b8", moveCost: 1, defMult: 1 },
-    "w": { name: "Woods",   color: "#5a8f4e", moveCost: 2, defMult: 2, losBlock: true },
-    "h": { name: "Slope",   color: "#c9a36a", moveCost: 2, defMult: 2, slope: true },
-    "t": { name: "Town",    color: "#b9b2a6", moveCost: 1, defMult: 2, losBlock: true },
-    "c": { name: "Chateau", color: "#9a8f9c", moveCost: 1, defMult: 3, losBlock: true },
-    "m": { name: "Marsh",   color: "#8f9b6a", moveCost: 3, defMult: 1 },
+    ".": { name: "Clear",      color: "#cfe3b8", moveCost: 1, defMult: 1 },
+    "w": { name: "Woods",      color: "#5a8f4e", moveCost: Infinity, defMult: 1,
+           passable: false, losBlock: true },
+    "W": { name: "Woods-Road", color: "#7da65c", moveCost: 1, defMult: 1,
+           roadOnly: true, losBlock: true },
+    "t": { name: "Building",   color: "#b9b2a6", moveCost: 1, defMult: 2, losBlock: true },
+    "c": { name: "Chateau",    color: "#9a8f9c", moveCost: 1, defMult: 2, losBlock: true },
+    "h": { name: "Slope",      color: "#c9a36a", moveCost: 2, defMult: 2, slope: true },
+    "m": { name: "Marsh",      color: "#8f9b6a", moveCost: 3, defMult: 1 },
   };
 
   /* ------------------------------ helpers -------------------------------- */
