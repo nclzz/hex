@@ -282,9 +282,13 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
      "every Waterloo map character maps to a declared terrain");
 
   const passable = (h) => def.terrain[h.terrain].passable !== false;
-  const o = g.objectives[0];
-  ok(!!g.hex(o.q, o.r) && g.hex(o.q, o.r).terrain === "t",
-     "the Mont-Saint-Jean objective sits on a town hex");
+  // The French exit hexes all exist, on the north edge, on passable ground.
+  ok(def.exitHexes.hexes.length >= 7, "at least seven exit hexes are marked");
+  for (const [c, r] of def.exitHexes.hexes) {
+    const a = Hex.offsetToAxial(c, r, "odd-r");
+    const h = g.hex(a.q, a.r);
+    ok(!!h && passable(h) && h.row === 0, `exit hex ${c},${r} is a passable north-edge hex`);
+  }
 
   // Every deployed unit on a real, passable, un-stacked hex.
   const seen = new Set();
@@ -325,19 +329,21 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
     }
     return seenK;
   }
+  const gate = Hex.offsetToAxial(def.exitHexes.hexes[0][0], 0, "odd-r");
   for (const f of def.factions) {
     const start = g.living(f.id)[0];
-    ok(reaches(start).has(Hex.key(o.q, o.r)), `${f.name} can reach the crossroads on foot`);
+    ok(reaches(start).has(Hex.key(gate.q, gate.r)),
+       `${f.name} can reach the northern exit hexes on foot`);
   }
 }
 
-/* --- all three scenarios are registered for the picker ------------------ */
+/* --- all scenarios are registered for the picker ------------------------ */
 {
   const reg = ctx.HEX_SCENARIOS || [];
-  ok(reg.length === 3, "three scenarios registered");
+  ok(reg.length === 4, "four scenarios registered (incl. the Grouchy variant)");
   ok(reg.indexOf(RIDGE_ASSAULT) >= 0 && reg.indexOf(SAMBRE_CROSSING) >= 0 &&
-     reg.indexOf(NAPOLEON_AT_WATERLOO) >= 0,
-     "the registry holds all three game definitions");
+     reg.indexOf(NAPOLEON_AT_WATERLOO) >= 0 && reg.indexOf(ctx.NAW_GROUCHY) >= 0,
+     "the registry holds all four game definitions");
   ok(reg.every((d) => d.title && d.blurb && d.brief),
      "every scenario carries title/blurb/brief for the picker and help");
   ok(reg.every((d) => d.naw === true),

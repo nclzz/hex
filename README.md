@@ -4,11 +4,15 @@ A tiny, **reusable hex-and-counter wargame engine** that now implements the
 **Napoleon at War** system — the classic SPI ruleset published on the
 [HexWar wiki](https://www.hexwar.com/wiki/games/napoleon-at-war/common/common-rules.html) —
 as a shared body of *common rules*, with each battle adding its own
-*exclusive rules*, exactly like the printed series. Three playable scenarios
+*exclusive rules*, exactly like the printed series. Four playable scenarios
 ship on it (hot-seat, two players, mobile browser):
 
-- **Napoleon at Waterloo** — 22×16, June 18, 1815. Break Wellington's army
-  before nightfall; from Turn 3 the Prussians pour in from the east.
+- **Napoleon at Waterloo** — 27×22, June 18, 1815. A race to destroy 40
+  enemy strength points; from Turn 2 the Prussians pour in from the east,
+  and the French can still win by marching seven units off toward Brussels.
+- **Waterloo — Grouchy Variant** — the same battle with the official
+  optional rule: a secret die roll per side decides whether Grouchy's
+  detachment returns and how much of Blücher's army shows up.
 - **Ridge Assault** — 9×11, a short fight for one town; fits on a phone screen.
 - **Sambre Crossing** — 24×18, an army-sized battle across a river. Drag to
   scroll and pinch to zoom.
@@ -88,21 +92,43 @@ Every scenario plays by the series' Standard Rules (scale: 1 hex ≈ 400–800 m
   only if both flanking hexes block). Guns firing from range are never
   touched by the result — only adjacent attackers pay.
 - **Demoralization.** Scenarios can give each army a Demoralization Level;
-  when its cumulative eliminated strength points reach it, the army breaks and
-  the game ends at that instant (the HUD tracks it live).
+  when its cumulative eliminated strength points reach it, the army breaks.
+  What that means is the scenario's call — instant defeat, or fighting on
+  under a penalty, as at Waterloo (the HUD tracks the totals live).
 - **Reinforcements** arrive on schedule at their map edge, pay 1 MP for the
   entry hex, and fight the same turn.
 
 ### Exclusive rules — Napoleon at Waterloo
 
-- Prussian columns (Bülow, then Zieten) enter on non-woods hexes of the
-  easternmost column from Game-Turn 3.
-- French demoralization at 40 SP, Anglo-Allied at 26. Breaking the Prussians
-  (12 SP) doesn't end the game — it *raises the French level by 10*.
-  Prussian losses never count against the Anglo-Allied army.
-- The French also win at the instant they hold Mont-Saint-Jean (★). At
-  nightfall (end of Turn 10), the Allies have held.
-- The 27×22 map follows the published NAW Waterloo map: open farmland, the
+Implemented from the game's official **Exclusive Rules** sheet (they layer
+on top of the Standard Rules; the app enforces all of them):
+
+- **Prussians arrive on Game-Turn 2** on non-woods hexes of the easternmost
+  column — and never on an entry hex inside a French Zone of Control.
+- **Victory is a race to 40.** Each side tries to destroy 40 enemy strength
+  points (Prussian losses count against the Allied total). The Allies win
+  the instant the French lose 40 while the Allies are still under 40.
+- **Losing 40 SP demoralizes the Allies but doesn't end the game** — from
+  then on every Allied attack is resolved one CRT column worse and every
+  French attack one column better (the battle card shows the shift).
+- **The French win by exiting.** With the Allies demoralized, the French
+  must also march **seven units off the north-edge exit hexes** (the road
+  to Brussels, marked ▲ on the map) during their Movement Phases. Exited
+  units are safely off the map — they don't count as losses. Anything less
+  by nightfall (end of Turn 10) is a draw; if both armies cross 40, the
+  side that broke first loses.
+- **Only woods block artillery lines of sight here** — the stone farms of
+  La Haye Sainte and Hougoumont do not (a per-scenario override of the
+  common Terrain Key).
+- **The attacker may voluntarily lower the combat ratio** before rolling
+  (the "Lower odds" control on the battle card), e.g. to fish for an
+  Exchange.
+- **The Grouchy Variant** (its own entry on the start screen): each side
+  secretly rolls a code 1–6 before play. The French code decides whether
+  Grouchy's five counters (5-4, 4-4, 4-4, 2-5, 3-3) arrive on Turn 4 from
+  the south-east; the Prussian code cancels, delays or reduces Blücher's
+  columns per the official table.
+- The map follows the published NAW Waterloo map: open farmland, the
   villages in their historical places, the Bois de Paris on the eastern
   flank, and the yellow road net (the Brussels highway, the Nivelles road,
   the lateral to Braine-l'Alleud, the eastern road by Ohain) as ½-MP road
@@ -210,7 +236,7 @@ how the rivers work.
 npm test          # pure Node, no install needed
 ```
 
-267 headless assertions across the four suites above, plus an optional
+383 headless assertions across the four suites above, plus an optional
 browser smoke test (Playwright) that drives a real battle — mandatory combat,
 the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 
@@ -225,17 +251,27 @@ multi-hex combat, retreats with displacement, advances for either victor,
 the artillery rules with Line of Sight, and night game-turns). The
 **Combat Results Table and the Terrain Key are the official charts**
 (clear / woods-prohibited / road-bound Woods-Road / doubling buildings),
-and the Waterloo map is drawn from the published game map. Still
-**reconstructions**, all plain data in one place each:
+the Waterloo map is drawn from the published game map, and the Waterloo
+scenario follows the game's official **Exclusive Rules** (Turn-2 Prussians,
+the 40-SP race, demoralization column shifts, the seven-unit exit, the
+Grouchy Variant tables, towns-don't-block-LOS). Still **reconstructions**,
+all plain data in one place each:
 
 - the **Slope and Marsh** terrain values
   (`games/napoleon-at-war-common.js`) — used by the two non-Waterloo
   scenarios, not part of the game's key;
-- the Waterloo **order of battle** and **demoralization levels**
-  (`games/napoleon-at-waterloo.js`), sized to the series' scale.
+- parts of the Waterloo **order of battle**
+  (`games/napoleon-at-waterloo.js`): the Guard units' values and the exact
+  Prussian counter mix are sized to the series' scale (the Grouchy
+  detachment itself uses the counter values named in the official variant
+  table).
 
 Documented simplifications of the printed rules: the retreat/displacement
 hex and the Exchange losses are auto-picked (farthest-from-enemy /
 weakest-first) rather than chosen by the owning player; one advance per
-combat when several hexes are vacated; and reinforcements auto-place on the
-first free entry hex instead of asking.
+combat when several hexes are vacated; reinforcements auto-place on the
+first free entry hex instead of asking, and the voluntary hold-back option
+([7.3]) isn't offered; the required-bombardment displacement exception
+([6.5]) and the voluntary gun fallback before melee ([6.8]) are not
+modeled; and Grouchy-variant codes are rolled at setup and visible to both
+players rather than kept secret until the arrival turn.

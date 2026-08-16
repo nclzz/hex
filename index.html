@@ -70,6 +70,11 @@
   #attackBtn:active{transform:translateY(1px);}
   #attackBtn:disabled{opacity:.45;}
   #attackBtn.hidden{display:none;}
+  #exitBtn{height:44px; padding:0 12px; display:inline-flex; align-items:center;
+    font-size:14px; font-weight:800; border-radius:10px; border:none;
+    color:#fff; background:var(--blue-d); white-space:nowrap;}
+  #exitBtn:active{transform:translateY(1px);}
+  #exitBtn.hidden{display:none;}
   /* Toast lane: pinned to the top of the board (below the Fit/? buttons) so a
      flash can never stack on the hex inspector in the bottom-left corner. */
   #log{position:absolute; left:8px; right:8px; top:44px; text-align:center; pointer-events:none;}
@@ -124,6 +129,11 @@
   .cbRow .v{font-weight:700;}
   #cbBomb{font-size:12px; opacity:.7; padding:3px 2px; text-align:center;}
   #odds{text-align:center; font-size:26px; font-weight:900; margin:8px 0 4px;}
+  /* Voluntary ratio lowering, announced before the roll */
+  #oddsCtl{display:flex; gap:8px; justify-content:center; margin-bottom:4px;}
+  #oddsCtl button{padding:4px 10px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-d); color:var(--ink); font-size:12px; font-weight:700;}
+  #oddsCtl button:disabled{opacity:.4;}
   #dieBox{text-align:center; font-size:14px; min-height:20px; margin-bottom:6px; opacity:.9;}
   #cbBtns{display:flex; gap:10px; margin-top:12px;}
   #cbBtns button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; font-size:15px; color:#fff;}
@@ -221,6 +231,10 @@
           <div id="cbUnits" hidden></div>
           <div id="cbBomb" hidden>Units firing from range never suffer attacker losses or retreats.</div>
           <div id="odds">– : –</div>
+          <div id="oddsCtl">
+            <button id="lowerBtn" title="Fight at deliberately lower odds">Lower odds −</button>
+            <button id="lowerReset" hidden>reset</button>
+          </div>
         </div>
         <div id="dieBox"></div>
         <div id="cbBtns">
@@ -303,6 +317,7 @@
         <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H10"/>
       </svg>
     </button>
+    <button id="exitBtn" class="hidden">March off ▲</button>
     <button id="attackBtn" class="hidden">Attack</button>
     <button id="actBtn">End Movement</button>
   </div>

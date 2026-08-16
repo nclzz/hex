@@ -68,6 +68,21 @@
       orientation: DEF.orientation,
       terrainColor: (g, hex) => DEF.terrain[hex.terrain].color,
       decorateHex: (ctx, g, hex, c, size) => {
+        if (g.isExitHex && g.isExitHex(hex.q, hex.r)) {
+          // Exit hexes: an upward chevron in the exiting side's colour.
+          const fac = factionById(DEF.exitHexes.faction);
+          ctx.strokeStyle = fac.color; ctx.lineWidth = Math.max(2, size * 0.12);
+          ctx.lineCap = "round";
+          const w = size * 0.34, h = size * 0.3;
+          for (const dy of [-size * 0.12, size * 0.24]) {
+            ctx.beginPath();
+            ctx.moveTo(c.x - w, c.y + dy + h / 2);
+            ctx.lineTo(c.x, c.y + dy - h / 2);
+            ctx.lineTo(c.x + w, c.y + dy + h / 2);
+            ctx.stroke();
+          }
+          return;
+        }
         if (g.isObjective(hex.q, hex.r)) {
           ctx.beginPath();
           for (let i = 0; i < 6; i++) {
@@ -372,7 +387,7 @@
         game.moveUnit(selected, q, r);
         selected = null; reachable = new Map();
         focus({ q, r });
-        draw(); syncSel(); syncUndo(); return;
+        draw(); syncSel(); syncUndo(); syncExit(); return;
       }
       if (u && game.canMove(u)) {
         selected = u; reachable = game.reachable(u); focus(u);
@@ -381,7 +396,7 @@
           flash("Locked in enemy ZOC — must stand and fight. (Hold a hex to inspect it.)");
         selected = null; reachable = new Map();
       }
-      draw(); syncSel();
+      draw(); syncSel(); syncExit();
     } else { // combat: taps on enemies group the next battle
       if (u && u.faction !== game.activeFaction) {
         const i = targets.indexOf(u);
@@ -418,7 +433,12 @@
     el.querySelector(".hiEffect").textContent = effect;
 
     const objEl = el.querySelector(".hiObj");
-    if (game.isObjective(q, r)) {
+    if (game.isExitHex && game.isExitHex(q, r)) {
+      const ex = DEF.exitHexes;
+      objEl.textContent = `▲ ${factionById(ex.faction).name} exit hex — march ` +
+        `${ex.target} units off the map edge to fulfil the victory conditions.`;
+      objEl.hidden = false;
+    } else if (game.isObjective(q, r)) {
       const owner = factionById((game.objectives.find((o) => o.q === q && o.r === r) || {}).owner);
       objEl.textContent = `★ Objective — ${owner ? owner.name : "a side"} wins by holding this hex.`;
       objEl.hidden = false;
@@ -476,6 +496,7 @@
       defenders,
       eligible: eligibleFor(defenders),
       chosen: null,
+      lower: 0, // voluntary ratio reduction, announced before the roll [6.2]
     };
     pending.chosen = new Set(pending.eligible.map((a) => a.id)); // all in by default
     // Attacker chips (the player picks who joins the battle).
@@ -526,12 +547,29 @@
       $("cbTer").textContent = `combined defense (with terrain) → ${def}`;
     }
     const valid = battleValid(defenders, picked);
-    $("odds").textContent = valid ? colLabel(game.oddsColumn(atk, def)) : "—";
+    let column = null, canLower = false;
+    if (valid) {
+      const cols = game.def.crt.columns;
+      column = game.oddsColumn(atk, def);
+      let i = cols.indexOf(column);
+      pending.lower = Math.min(pending.lower, i); // never below the lowest column
+      i -= pending.lower;
+      column = cols[i];
+      canLower = i > 0;
+    }
+    $("odds").textContent = valid
+      ? colLabel(column) + (pending.lower ? " (lowered)" : "")
+      : "—";
+    $("lowerBtn").disabled = !valid || !canLower;
+    $("lowerReset").hidden = !pending.lower;
     $("dieBox").textContent = valid ? ""
       : "Not legal: every defender needs an adjacent attacker in the battle.";
     $("resolveBtn").disabled = !valid;
   }
 
+  // The attacker may deliberately fight at lower odds [6.2].
+  $("lowerBtn").onclick = () => { if (pending) { pending.lower++; refreshCombatCard(); } };
+  $("lowerReset").onclick = () => { if (pending) { pending.lower = 0; refreshCombatCard(); } };
   $("cancelBtn").onclick = () => { pending = null; hide("cbOv"); draw(); syncSel(); syncAttack(); };
   $("resolveBtn").onclick = () => {
     if (!pending) return;
@@ -546,7 +584,7 @@
 
   function resolve() {
     const picked = pending.eligible.filter((a) => pending.chosen.has(a.id));
-    const res = game.resolveCombat(pending.defenders, picked);
+    const res = game.resolveCombat(pending.defenders, picked, { lower: pending.lower });
     pending = null;
     targets = [];
     if (!res.ok) { // the engine refused (should be rare — the card validates)
@@ -700,6 +738,21 @@
     if (!game || game.over || anyOverlay() || game.phase !== "combat") return;
     if (targets.length) { focus(targets[0]); openCombat(targets.slice()); }
   };
+  const exitBtn = $("exitBtn");
+  exitBtn.onclick = () => {
+    if (!game || game.over || anyOverlay() || !selected) return;
+    const u = selected;
+    const res = game.exitUnit(u);
+    if (!res.ok) { flash(res.reason); return; }
+    const ex = DEF.exitHexes;
+    flash(`${factionById(ex.faction).short} marches off — ${game.exitedCount(ex.faction)}/${ex.target}.`);
+    selected = null; reachable = new Map();
+    draw(); syncHud();
+  };
+  function syncExit() {
+    exitBtn.classList.toggle("hidden",
+      !(game && !game.over && selected && game.canExit && game.canExit(selected)));
+  }
   function syncAttack() {
     const on = game && !game.over && game.phase === "combat" && targets.length > 0;
     attackBtn.classList.toggle("hidden", !on);
@@ -745,17 +798,25 @@
       night ? "Night — Movement" : game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
-    // Demoralization ticker: eliminated SP vs each army's breaking point.
+    // Demoralization ticker: eliminated SP vs each army's breaking point
+    // ("!" marks a broken army), plus the exit count where a side must
+    // march units off the map.
     const dp = $("demPill");
     const hasDem = !!(DEF.demoralization && global.NAW_COMMON);
     document.body.classList.toggle("hasDem", hasDem);
     if (hasDem) {
       dp.hidden = false;
-      dp.textContent = global.NAW_COMMON.demoralizationStatus(game)
-        .map((s) => `${s.short || s.name} ${s.lost}/${s.level}`).join(" · ");
+      let txt = global.NAW_COMMON.demoralizationStatus(game)
+        .map((s) => `${s.short || s.name} ${s.lost}/${s.level}${s.lost >= s.level ? "!" : ""}`)
+        .join(" · ");
+      if (DEF.exitHexes) {
+        txt += ` · OUT ${game.exitedCount(DEF.exitHexes.faction)}/${DEF.exitHexes.target}`;
+      }
+      dp.textContent = txt;
     } else dp.hidden = true;
     syncUndo();
     syncAttack();
+    syncExit();
     syncSel();
   }
   function syncSel() {
@@ -864,6 +925,7 @@
     game.events.on("undo", save);
     game.events.on("combat", save);
     game.events.on("advance", save);
+    game.events.on("exit", save);
     game.events.on("reinforce", save);
     game.events.on("phase", save);
     game.events.on("gameover", clearSave);
