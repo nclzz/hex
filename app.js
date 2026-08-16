@@ -642,7 +642,7 @@
   }
 
   // ------------------------------ overlays ---------------------------------
-  const OVERLAYS = ["startOv", "passOv", "cbOv", "winOv", "helpOv"];
+  const OVERLAYS = ["startOv", "wizOv", "passOv", "cbOv", "winOv", "helpOv"];
   const show = (id) => $(id).classList.add("show");
   const hide = (id) => $(id).classList.remove("show");
   const anyOverlay = () => OVERLAYS.some((id) => $(id).classList.contains("show"));
@@ -692,13 +692,43 @@
       const t = document.createElement("div"); t.className = "t"; t.textContent = def.title;
       const d = document.createElement("div"); d.className = "b"; d.textContent = def.blurb || "";
       b.appendChild(t); b.appendChild(d);
-      b.onclick = () => { hide("startOv"); startGame(def); };
+      b.onclick = () => showWizard(def);
       list.appendChild(b);
     }
-    hide("cbOv"); hide("winOv");
+    hide("cbOv"); hide("winOv"); hide("wizOv");
     document.body.classList.add("nogame");
     show("startOv");
   }
+
+  // ------------------------- pre-game wizard -------------------------------
+  // Before a new battle begins, one card spells out how this scenario is won
+  // — a row per condition from def.winConditions (def.brief is the fallback).
+  // Resuming a saved game skips it; the players already know their goal.
+  let wizDef = null;
+  function showWizard(def) {
+    wizDef = def;
+    $("wizTitle").textContent = def.title;
+    $("wizMeta").textContent =
+      `${def.maxTurns} game-turns · ${def.factions[0].name} moves first`;
+    const list = $("wizList");
+    list.innerHTML = "";
+    const conds = def.winConditions || [{ text: def.brief || "" }];
+    for (const c of conds) {
+      const row = document.createElement("div"); row.className = "wizCond";
+      const who = document.createElement("span"); who.className = "who";
+      const fac = c.side && def.factions.find((f) => f.id === c.side);
+      who.textContent = fac ? fac.short : (c.label || "DRAW");
+      if (fac) who.style.background = fac.color;
+      const tx = document.createElement("div"); tx.className = "tx";
+      tx.textContent = c.text;
+      row.appendChild(who); row.appendChild(tx);
+      list.appendChild(row);
+    }
+    hide("startOv");
+    show("wizOv");
+  }
+  $("wizStart").onclick = () => { hide("wizOv"); startGame(wizDef); };
+  $("wizBack").onclick = () => showStart();
 
   // Help text is per-scenario: goal from the game def, legend from its terrain.
   function populateHelp() {

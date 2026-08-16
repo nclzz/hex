@@ -169,6 +169,22 @@
   .scenBtn.cont .b{opacity:.92;}
   .scenBtn .t{font-size:16px; font-weight:800;}
   .scenBtn .b{font-size:12.5px; opacity:.78; margin-top:3px; line-height:1.35;}
+  /* Pre-game wizard: how this scenario is won, one card per condition. */
+  #wizOv{background:rgba(18,16,12,.96);}
+  #wizCard{color:#fff; width:min(380px,92vw); text-align:left;}
+  #wizCard h2{margin:0 0 2px; font-size:20px; font-weight:900;}
+  #wizCard .sub{opacity:.75; font-size:12.5px; margin-bottom:14px;}
+  #wizCard .kicker{opacity:.75; font-size:12px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:2px;}
+  .wizCond{display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
+    border-radius:12px; padding:10px 12px;}
+  .wizCond .who{flex:none; font-size:11px; font-weight:900; color:#fff; margin-top:1px;
+    padding:3px 8px; border-radius:999px; background:#57534e; letter-spacing:.4px;}
+  .wizCond .tx{font-size:13px; line-height:1.45;}
+  #wizBtns{display:flex; gap:10px; margin-top:14px;}
+  #wizBtns button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; font-size:15px;}
+  #wizStart{background:#fff; color:var(--ink);}
+  #wizBack{background:rgba(255,255,255,.14); color:#fff;}
   /* Fixed so it covers the HUD and bottom bar too; scrolls on its own when the
      card is taller than the viewport. */
   #helpOv{background:rgba(18,16,12,.92); position:fixed; z-index:30;
@@ -266,6 +282,20 @@
         <h2>Hex Wargame</h2>
         <div class="sub">Hot-seat, two players, one device. Choose a battle.</div>
         <div id="scenList"></div>
+      </div>
+    </div>
+
+    <!-- Pre-game wizard: the scenario's victory conditions -->
+    <div id="wizOv" class="overlay">
+      <div id="wizCard">
+        <div class="kicker">How to win</div>
+        <h2 id="wizTitle"></h2>
+        <div class="sub" id="wizMeta"></div>
+        <div id="wizList"></div>
+        <div id="wizBtns">
+          <button id="wizBack">Back</button>
+          <button id="wizStart">To battle</button>
+        </div>
       </div>
     </div>
 

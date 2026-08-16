@@ -39,6 +39,13 @@
       "are locked, retreats are one hex (a blocked retreat displaces a " +
       "friend or destroys the unit), and a victor may advance into a hex " +
       "it clears.",
+    winConditions: [
+      { side: "fr", text: "Seize the three towns (★) beyond the Sambre. " +
+        "Taking all three ends the game on the spot; holding more of them " +
+        "than the Allies at nightfall (Turn 10) also wins." },
+      { side: "al", text: "Hold at least as many towns as the French through " +
+        "Turn 10 — the three bridges are the only ways over the river." },
+    ],
     maxTurns: 10,
 
     // combat = strength, move = movement allowance, range = attack reach (default 1).

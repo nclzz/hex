@@ -20,6 +20,12 @@
       "adjacent units MUST fight, units starting next to the enemy are " +
       "locked, retreats are one hex, and a victor may advance into a hex " +
       "it clears.",
+    winConditions: [
+      { side: "fr", text: "Storm the Town (★) — the game ends the instant a " +
+        "French unit stands on it." },
+      { side: "al", text: "Hold the Town through the end of Turn 6, or " +
+        "destroy the French army." },
+    ],
     maxTurns: 6,
 
     // combat = strength, move = movement allowance, range = attack reach (default 1).

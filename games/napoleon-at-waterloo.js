@@ -96,6 +96,22 @@
                    "and Grouchy's French corps may appear behind them" : "") +
         ". Only woods block artillery sight lines here; an attacker may also " +
         "deliberately lower his combat odds before rolling.",
+      // [8.0] shown by the pre-game wizard.
+      winConditions: [
+        { side: "al", text: "Destroy 40 French Strength Points before losing " +
+          "40 of your own — the game stops the instant you do. Prussian " +
+          "losses count against you." },
+        { side: "fr", text: "Demoralize the Allies (destroy 40 of their " +
+          "Strength Points), then march SEVEN units off the north-edge ▲ " +
+          "hexes during your Movement Phases." },
+        { label: "DRAW", text: "Anything else at nightfall (end of Turn 10) " +
+          "is a draw. A demoralized army fights on with every attack one CRT " +
+          "column worse — and its enemy's one better." },
+      ].concat(grouchy ? [
+        { label: "ROLLS", text: "Before play each side draws a secret code: " +
+          "it decides whether Grouchy's corps returns for France and how " +
+          "much of Blücher's army comes for the Allies." },
+      ] : []),
       maxTurns: 10,
 
       // CS-MA per the rulebook's counters where named (cavalry x-5,
