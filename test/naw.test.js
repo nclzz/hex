@@ -588,6 +588,31 @@ function corridorDef(over) {
      "a bridge carries ZOC — the gun starts locked in contact");
 }
 
+/* --- [6.6] the rules' Zone of Control Example ------------------------------ */
+{
+  // A unit's ZOC reaches all six neighbors — through streams, over bridged
+  // river hexsides, into any terrain — EXCEPT through an unbridged river.
+  const g = new Game(tinyDef({
+    map: ["........", "........", "....w...", "..t.....", "........", "........"],
+    hexsides: [
+      { type: "river",  pairs: [[[3, 3], [3, 4]]] },
+      { type: "bridge", pairs: [[[3, 3], [4, 4]]] },
+      { type: "stream", pairs: [[[3, 3], [3, 2]]] },
+    ],
+    setup: [
+      { faction: "fr", units: [[3, 3, "inf"]] },
+      { faction: "al", units: [[7, 0, "inf"]] },
+    ],
+  }));
+  const zoc = (c, r) => g.isEnemyZOC("al", at(c, r).q, at(c, r).r);
+  ok(zoc(4, 3), "ZOC example: plain neighbor");
+  ok(zoc(2, 3), "ZOC example: town neighbor (terrain never blocks)");
+  ok(zoc(4, 2), "ZOC example: woods neighbor (terrain never blocks)");
+  ok(zoc(3, 2), "ZOC example: across a stream");
+  ok(zoc(4, 4), "ZOC example: across a bridged river");
+  ok(!zoc(3, 4), "ZOC example: NO ZOC through an unbridged river [6.6]");
+}
+
 /* --- [7.73/7.8] displacement on retreat ------------------------------------ */
 {
   // D's only exits are friendly-occupied: the friend is displaced.
