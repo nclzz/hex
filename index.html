@@ -177,21 +177,15 @@
   .crtCell.mixed{background:#f2e2b3; color:#7a5c00;}
   .crtCell.bad{background:#f0cdc4; color:#8c2318;}
   .crtCell.dud{opacity:.28;}
-  .crtCell.hit{transform:scale(1.14); border-color:var(--ink);
-    box-shadow:0 2px 8px rgba(0,0,0,.28);}
-  /* The die itself: pips drawn on a 3×3 grid; it wobbles while tumbling (an
-     inline transform per tick) and lands with a settle bounce. */
-  #rollZone{display:flex; justify-content:center; margin:10px 0 2px;}
-  #rollZone[hidden]{display:none;}
-  #die{width:54px; height:54px; background:#fdfbf4; border:2px solid var(--ink);
-    border-radius:12px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr);
-    padding:7px; gap:1px; box-shadow:0 4px 10px rgba(0,0,0,.3);}
-  #die .pip{border-radius:50%; background:var(--ink); transform:scale(0);
-    transition:transform .05s;}
-  #die .pip.on{transform:scale(1);}
-  #die.landed{animation:dieLand .5s cubic-bezier(.2,2.2,.4,1);}
-  @keyframes dieLand{0%{transform:scale(1.35) rotate(-10deg);}
-    55%{transform:scale(.92) rotate(3deg);} 100%{transform:scale(1) rotate(0);}}
+  /* The roll IS the strip: a highlight sweeps across the cells with
+     decelerating ticks, then settles on the outcome. */
+  .crtCell.run{transform:scale(1.1); border-color:var(--ink);
+    transition-duration:.05s;}
+  .crtCell.hit{transform:scale(1.2); border-color:var(--ink);
+    box-shadow:0 2px 8px rgba(0,0,0,.28);
+    animation:cellLand .45s cubic-bezier(.2,2.2,.4,1);}
+  @keyframes cellLand{0%{transform:scale(1.45);} 60%{transform:scale(1.1);}
+    100%{transform:scale(1.2);}}
   /* The verdict banner: the outcome in plain words, coloured like the strip.
      Big results (eliminations, exchanges) also shake the banner. */
   #verdict{margin:10px 0 0; padding:9px 12px 10px; border-radius:12px;
@@ -369,7 +363,6 @@
           </div>
           <div id="crtStrip" hidden></div>
         </div>
-        <div id="rollZone" hidden><div id="die"></div></div>
         <div id="dieBox"></div>
         <div id="cbBtns">
           <button id="cancelBtn">Cancel</button>
