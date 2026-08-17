@@ -113,9 +113,14 @@
   /* The battle card is a SHEET, not a modal: it docks to one edge and leaves
      the board visible and live behind it, because "advance into the hex?"
      cannot be answered without seeing where the unit and the hex are. The
-     scrim is inert; only the card itself takes pointer events. */
+     scrim is inert; only the card itself takes pointer events. FIXED, not
+     absolute: the card rides the real bottom of the screen, in front of the
+     action bar — which has nothing to offer while a battle is being fought. */
   #cbOv{background:none; pointer-events:none; align-items:flex-end;
-    justify-content:center; padding:0;}
+    justify-content:center; padding:0; position:fixed;}
+  /* Whatever sliver of the action bar the card leaves uncovered (wide
+     screens, the landscape rail) reads as what it is: out of play. */
+  body.sheetOpen #bottom{opacity:.35; pointer-events:none;}
   /* Attacker toggle chips (Napoleon at War: the player groups the battle) */
   #cbUnits{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px 0 2px;}
   #cbUnits[hidden]{display:none;} /* an id rule outranks the UA [hidden] */
@@ -136,7 +141,9 @@
     margin-right:6px; vertical-align:-1px; border:1px solid rgba(255,255,255,.55);}
   #advBtns button.on{box-shadow:0 0 0 2px #fff;}
   #cbCard{background:var(--panel); border:2px solid var(--line); border-bottom:none;
-    border-radius:16px 16px 0 0; padding:4px 16px 16px; width:min(440px,100%);
+    border-radius:16px 16px 0 0;
+    padding:4px 16px calc(16px + env(safe-area-inset-bottom));
+    width:min(440px,100%);
     max-height:76%; overflow-y:auto; pointer-events:auto;
     box-shadow:0 -10px 30px rgba(0,0,0,.45);}
   #cbCard h3{margin:0 0 10px; font-size:17px; text-align:center;}
@@ -220,7 +227,9 @@
   /* Landscape on a phone has no vertical room to give away: dock the card to
      the side instead, and the camera insets go horizontal to match. */
   @media (orientation: landscape) and (max-height: 560px) {
-    #cbOv{align-items:stretch; justify-content:flex-end;}
+    /* The side rail stays confined to the board (absolute, not fixed): a
+       full-height fixed rail would cover the HUD's New button up top. */
+    #cbOv{align-items:stretch; justify-content:flex-end; position:absolute;}
     #cbCard{width:min(320px,50%); max-height:100%; padding:4px 14px 14px;
       border:2px solid var(--line); border-right:none; border-radius:16px 0 0 16px;
       box-shadow:-10px 0 30px rgba(0,0,0,.45);}
