@@ -565,6 +565,65 @@
   // so the "Lower odds" control stops here.
   const LOWER_FLOOR_COLUMN = "1:1";
 
+  // The five CRT results from the attacker's point of view: the colour class
+  // shared by the odds strip and the verdict banner, a battle-cry headline,
+  // and whether the result is dramatic enough to shake the banner.
+  const CODES = {
+    De: { cls: "good",  head: "Defenders destroyed!", big: true  },
+    Dr: { cls: "good",  head: "Defenders fall back!", big: false },
+    Ex: { cls: "mixed", head: "Bloody exchange!",     big: true  },
+    Ar: { cls: "bad",   head: "Attack repulsed!",     big: false },
+    Ae: { cls: "bad",   head: "Attack shattered!",    big: true  },
+  };
+  let rolling = false; // a die is tumbling: the card's inputs are committed
+
+  // The die face: pips on a 3×3 grid, indexed row-major.
+  const PIP_FACES = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
+  const dieEl = $("die");
+  for (let i = 0; i < 9; i++) {
+    const p = document.createElement("span"); p.className = "pip"; dieEl.appendChild(p);
+  }
+  function setDieFace(n) {
+    const on = PIP_FACES[n - 1];
+    for (let i = 0; i < 9; i++) dieEl.children[i].classList.toggle("on", on.includes(i));
+  }
+
+  // Haptics, where the device offers them (same guard as the hex inspector).
+  const buzz = (pattern) => {
+    if (global.navigator && global.navigator.vibrate) {
+      try { global.navigator.vibrate(pattern); } catch (e) { /* no haptics */ }
+    }
+  };
+  // A pocket sound kit (WebAudio, no assets): a woody tick per tumble, a thud
+  // on landing, a short rise or fall as the verdict pops. Created lazily
+  // inside the Attack! gesture, so autoplay policies are satisfied; every
+  // call is guarded — no audio support just means a silent roll.
+  let audio = null;
+  function sfx(kind) {
+    try {
+      const AC = global.AudioContext || global.webkitAudioContext;
+      if (!AC) return;
+      if (!audio) audio = new AC();
+      if (audio.state === "suspended") audio.resume();
+      const t = audio.currentTime;
+      const note = (type, f0, f1, vol, dur, at) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.connect(g); g.connect(audio.destination);
+        o.type = type;
+        o.frequency.setValueAtTime(f0, t + at);
+        if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + at + dur);
+        g.gain.setValueAtTime(vol, t + at);
+        g.gain.exponentialRampToValueAtTime(0.001, t + at + dur);
+        o.start(t + at); o.stop(t + at + dur + 0.02);
+      };
+      if (kind === "tick") note("square", 1900 + Math.random() * 700, 1400, 0.04, 0.045, 0);
+      else if (kind === "land") note("triangle", 170, 70, 0.22, 0.16, 0);
+      else if (kind === "good") { note("triangle", 392, 392, 0.12, 0.09, 0); note("triangle", 587, 587, 0.12, 0.14, 0.09); }
+      else if (kind === "bad") { note("triangle", 311, 311, 0.12, 0.09, 0); note("triangle", 208, 208, 0.12, 0.16, 0.09); }
+      else if (kind === "mixed") note("triangle", 330, 294, 0.12, 0.18, 0);
+    } catch (e) { /* silence is fine */ }
+  }
+
   // Eligible attackers for a battle: every unacted friendly unit in range of
   // at least one of the defenders.
   function eligibleFor(defenders) {
@@ -604,6 +663,7 @@
       b.innerHTML = `${t.glyph} ${t.combat}·${t.move}` +
         (bombarding ? ` <span class="r">@${Hx().distance(a, defenders[0])}</span>` : "");
       b.onclick = () => {
+        if (rolling) return; // the die is in the air — the battle is committed
         if (pending.chosen.has(a.id)) pending.chosen.delete(a.id);
         else pending.chosen.add(a.id);
         b.classList.toggle("off", !pending.chosen.has(a.id));
@@ -615,6 +675,11 @@
     $("cbTitle").textContent = "Resolve Combat";
     $("cbInfo").style.display = "";
     $("dieBox").textContent = "";
+    rolling = false;
+    $("rollZone").hidden = true;
+    $("verdict").hidden = true;
+    $("die").classList.remove("landed");
+    $("cancelBtn").disabled = false;
     $("cbBtns").style.display = "flex";
     $("advBox").hidden = true;
     $("contBtn").style.display = "none";
@@ -670,20 +735,51 @@
     $("dieBox").textContent = valid ? ""
       : "Not legal: every defender needs an adjacent attacker in the battle.";
     $("resolveBtn").disabled = !valid;
+    renderCrtStrip(valid ? column : null);
+  }
+
+  // The odds strip: the current CRT column laid flat, one cell per die face,
+  // coloured by what that face would do to the attacker. It updates live as
+  // chips and "Lower odds" change the column — the stakes are visible before
+  // the die is ever thrown.
+  function renderCrtStrip(column) {
+    const strip = $("crtStrip");
+    strip.hidden = $("crtCap").hidden = !column;
+    if (!column) { strip.innerHTML = ""; return; }
+    strip.innerHTML = "";
+    for (const [i, code] of game.def.crt.table[column].entries()) {
+      const cell = document.createElement("div");
+      cell.className = `crtCell ${(CODES[code] || { cls: "mixed" }).cls}`;
+      cell.innerHTML = `<span class="d">${i + 1}</span><span class="c">${code}</span>`;
+      strip.appendChild(cell);
+    }
   }
 
   // The attacker may deliberately fight at lower odds [6.2].
   $("lowerBtn").onclick = () => { if (pending) { pending.lower++; refreshCombatCard(); } };
   $("lowerReset").onclick = () => { if (pending) { pending.lower = 0; refreshCombatCard(); } };
   $("cancelBtn").onclick = () => { pending = null; closeCombatSheet(); draw(); syncSel(); syncAttack(); };
+  // Attack! throws the die: it tumbles with decelerating ticks — random faces,
+  // a wobble, a click per bounce — then resolve() lands it on the real face.
   $("resolveBtn").onclick = () => {
-    if (!pending) return;
+    if (!pending || rolling) return;
+    rolling = true;
     $("resolveBtn").disabled = true;
-    let ticks = 0; const box = $("dieBox");
-    const spin = setInterval(() => {
-      box.textContent = "🎲 " + (1 + Math.floor(Math.random() * 6));
-      if (++ticks >= 8) { clearInterval(spin); resolve(); }
-    }, 55);
+    $("cancelBtn").disabled = true;
+    $("lowerBtn").disabled = true;
+    $("lowerReset").hidden = true;
+    $("rollZone").hidden = false;
+    dieEl.classList.remove("landed");
+    syncSheetInsets(); // the die grew the card
+    let ticks = 0, delay = 45;
+    const tumble = () => {
+      setDieFace(1 + Math.floor(Math.random() * 6));
+      dieEl.style.transform = `rotate(${(Math.random() * 36 - 18).toFixed(1)}deg)`;
+      sfx("tick");
+      if (++ticks < 9) { delay *= 1.28; setTimeout(tumble, delay); }
+      else resolve();
+    };
+    tumble();
   };
   $("contBtn").onclick = () => { closeCombatSheet(); draw(); syncSel(); syncAttack(); syncHud(); };
 
@@ -699,16 +795,58 @@
     pending = null;
     targets = [];
     if (!res.ok) { // the engine refused (should be rare — the card validates)
+      rolling = false;
       closeCombatSheet(); flash(res.reason); draw(); syncSel(); syncAttack();
       return;
     }
     lastBattle = ground;
-    $("dieBox").innerHTML = `Die <b>${res.die}</b> → <b>${res.code}</b> — ${res.note}`;
+    // Land the die on the face the engine actually rolled: settle bounce,
+    // thud, and the matching cell of the odds strip lights while the misses
+    // fade — the strip the player has been staring at explains the outcome.
+    setDieFace(res.die);
+    dieEl.style.transform = "";
+    dieEl.classList.add("landed");
+    sfx("land"); buzz(30);
+    for (const [i, cell] of [...$("crtStrip").children].entries())
+      cell.classList.add(i === res.die - 1 ? "hit" : "dud");
     flash(`${colLabel(res.column)} · roll ${res.die} → ${res.note}`);
     $("cbBtns").style.display = "none";
-    if (res.advance && game.pendingAdvance) showAdvance();
-    else { $("contBtn").style.display = "block"; syncSheetInsets(); }
     draw(); syncHud();
+    // The verdict pops a beat after the die settles — land, then the news.
+    setTimeout(() => {
+      rolling = false;
+      if (!combatSheetOpen()) return; // e.g. the battle ended the game
+      showVerdict(res);
+      if (res.advance && game.pendingAdvance) showAdvance();
+      else { $("contBtn").style.display = "block"; syncSheetInsets(); }
+      // On a short screen the card overflows: keep the die and the lit strip
+      // cell in view, right above the docked verdict.
+      $("cbCard").scrollTop = $("cbCard").scrollHeight;
+      draw(); syncHud();
+    }, 450);
+  }
+
+  // The outcome in plain words, coloured from the roller's point of view.
+  function showVerdict(res) {
+    const meta = CODES[res.code] || { cls: "mixed", head: res.code, big: false };
+    let head = meta.head, big = meta.big;
+    // The engine's note outranks the code where they diverge: a bombardment
+    // shrugged off costs the guns nothing, and a defender with no way out is
+    // destroyed, not merely pushed back.
+    if ((res.code === "Ae" || res.code === "Ar") && /^Bombardment/.test(res.note)) {
+      head = "Bombardment fails"; big = false;
+    }
+    if (res.code === "Dr" && /eliminated/.test(res.note)) {
+      head = "Defenders trapped!"; big = true;
+    }
+    const v = $("verdict");
+    v.className = meta.cls + (big ? " big" : "");
+    v.querySelector(".vHead").textContent = head;
+    v.querySelector(".vSub").textContent =
+      `Die ${res.die} at ${colLabel(res.column)} — ${res.note}`;
+    v.hidden = false;
+    sfx(meta.cls);
+    if (big) buzz([20, 40, 30]);
   }
 
   // ----------------------- advance after combat -----------------------------
@@ -773,6 +911,8 @@
   function reopenAdvance() {
     $("cbTitle").textContent = "Advance After Combat";
     $("cbInfo").style.display = "none";
+    $("rollZone").hidden = true;
+    $("verdict").hidden = true;
     $("dieBox").textContent = "The last battle cleared a hex.";
     $("cbBtns").style.display = "none";
     $("contBtn").style.display = "none";

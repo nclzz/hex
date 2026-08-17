@@ -149,7 +149,8 @@
   #cbCard.collapsed .cbRow,
   #cbCard.collapsed #cbUnits,
   #cbCard.collapsed #cbBomb,
-  #cbCard.collapsed #oddsCtl{display:none;}
+  #cbCard.collapsed #oddsCtl,
+  #cbCard.collapsed #crtCap{display:none;} /* the strip itself stays — it IS the roll */
   #cbCard.collapsed h3{margin-bottom:4px; font-size:15px;}
   #cbCard.collapsed #odds{font-size:20px; margin:2px 0;}
   .cbRow{display:flex; justify-content:space-between; font-size:14px; padding:3px 2px;}
@@ -162,12 +163,66 @@
     background:var(--panel-d); color:var(--ink); font-size:12px; font-weight:700;}
   #oddsCtl button:disabled{opacity:.4;}
   #dieBox{text-align:center; font-size:14px; min-height:20px; margin-bottom:6px; opacity:.9;}
+  /* The odds strip: what every face of the die would do at the current column,
+     coloured from the attacker's point of view — green favours the attacker,
+     amber is an exchange, red a repulse. The tension is visible BEFORE the
+     roll, and the landed face explains the outcome by itself. */
+  #crtCap{text-align:center; font-size:11px; opacity:.6; margin-top:2px;}
+  #crtStrip{display:flex; gap:4px; justify-content:center; margin:3px 0 5px;}
+  #crtStrip[hidden], #crtCap[hidden]{display:none;}
+  .crtCell{flex:0 1 48px; min-width:0; text-align:center; border-radius:8px;
+    padding:3px 0 4px; border:1.5px solid transparent;
+    transition:opacity .25s, transform .25s;}
+  .crtCell .d{display:block; font-size:10px; font-weight:700; opacity:.7;}
+  .crtCell .c{display:block; font-size:13px; font-weight:900;}
+  .crtCell.good{background:#d7e8c2; color:#2c5e18;}
+  .crtCell.mixed{background:#f2e2b3; color:#7a5c00;}
+  .crtCell.bad{background:#f0cdc4; color:#8c2318;}
+  .crtCell.dud{opacity:.28;}
+  .crtCell.hit{transform:scale(1.14); border-color:var(--ink);
+    box-shadow:0 2px 8px rgba(0,0,0,.28);}
+  /* The die itself: pips drawn on a 3×3 grid; it wobbles while tumbling (an
+     inline transform per tick) and lands with a settle bounce. */
+  #rollZone{display:flex; justify-content:center; margin:10px 0 2px;}
+  #rollZone[hidden]{display:none;}
+  #die{width:54px; height:54px; background:#fdfbf4; border:2px solid var(--ink);
+    border-radius:12px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr);
+    padding:7px; gap:1px; box-shadow:0 4px 10px rgba(0,0,0,.3);}
+  #die .pip{border-radius:50%; background:var(--ink); transform:scale(0);
+    transition:transform .05s;}
+  #die .pip.on{transform:scale(1);}
+  #die.landed{animation:dieLand .5s cubic-bezier(.2,2.2,.4,1);}
+  @keyframes dieLand{0%{transform:scale(1.35) rotate(-10deg);}
+    55%{transform:scale(.92) rotate(3deg);} 100%{transform:scale(1) rotate(0);}}
+  /* The verdict banner: the outcome in plain words, coloured like the strip.
+     Big results (eliminations, exchanges) also shake the banner. */
+  #verdict{margin:10px 0 0; padding:9px 12px 10px; border-radius:12px;
+    text-align:center; color:#fff;
+    animation:verdictPop .45s cubic-bezier(.2,1.8,.4,1);}
+  #verdict[hidden]{display:none;}
+  #verdict .vHead{font-size:18px; font-weight:900; letter-spacing:.02em;}
+  #verdict .vSub{font-size:12.5px; font-weight:600; opacity:.94; margin-top:3px;
+    line-height:1.35;}
+  #verdict.good{background:#33702a;}
+  #verdict.mixed{background:#a4700c;}
+  #verdict.bad{background:#a32c1e;}
+  #verdict.big{animation:verdictPop .45s cubic-bezier(.2,1.8,.4,1),
+    verdictShake .38s .12s;}
+  @keyframes verdictPop{from{transform:scale(.7); opacity:0;}
+    60%{transform:scale(1.05);} to{transform:scale(1); opacity:1;}}
+  /* `translate` (not transform) so the shake composes with the pop above. */
+  @keyframes verdictShake{0%,100%{translate:0 0;} 20%{translate:-5px 0;}
+    40%{translate:5px 0;} 60%{translate:-3px 0;} 80%{translate:2px 0;}}
   #cbBtns{display:flex; gap:10px; margin-top:12px;}
   #cbBtns button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; font-size:15px; color:#fff;}
+  #cbBtns button:disabled{opacity:.45;} /* committed: the die is in the air */
   /* On a short screen the card scrolls — but the decision must never scroll
-     out of reach, so whichever action block is live rides the bottom edge. */
-  #cbBtns, #advBox, #contBtn{position:sticky; bottom:0; z-index:1;
-    background:var(--panel); padding-top:6px; padding-bottom:2px; margin-top:6px;}
+     out of reach, so whichever action block is live rides the bottom edge.
+     The verdict banner lives inside the result dock so the news and the
+     buttons it demands stay glued together, never covering one another. */
+  #cbBtns, #resultDock{position:sticky; bottom:0; z-index:1;
+    background:var(--panel); padding-bottom:2px;}
+  #cbBtns{padding-top:6px; margin-top:6px;}
   #resolveBtn{background:var(--red-d);} #cancelBtn{background:#6b6355;}
   #contBtn{background:var(--ink); width:100%; margin-top:12px; padding:12px; border-radius:10px; border:none; color:#fff; font-weight:800; font-size:15px; display:none;}
   /* Landscape on a phone has no vertical room to give away: dock the card to
@@ -314,17 +369,26 @@
             <button id="lowerBtn" title="Fight at deliberately lower odds">Lower odds −</button>
             <button id="lowerReset" hidden>reset</button>
           </div>
+          <div id="crtCap" hidden>If the die lands on&hellip;</div>
+          <div id="crtStrip" hidden></div>
         </div>
+        <div id="rollZone" hidden><div id="die"></div></div>
         <div id="dieBox"></div>
         <div id="cbBtns">
           <button id="cancelBtn">Cancel</button>
           <button id="resolveBtn">Attack!</button>
         </div>
-        <div id="advBox" hidden>
-          <div class="advLabel">A hex was cleared — advance into it?</div>
-          <div id="advBtns"></div>
+        <div id="resultDock">
+          <div id="verdict" hidden>
+            <div class="vHead"></div>
+            <div class="vSub"></div>
+          </div>
+          <div id="advBox" hidden>
+            <div class="advLabel">A hex was cleared — advance into it?</div>
+            <div id="advBtns"></div>
+          </div>
+          <button id="contBtn">Continue</button>
         </div>
-        <button id="contBtn">Continue</button>
       </div>
     </div>
 
@@ -381,7 +445,9 @@
         <p><b>Fight — combat is compulsory:</b> every enemy next to your units must be
         attacked, and every one of your units next to an enemy must attack. Tap enemies to
         group them into a battle (a unit touching two enemies attacks both at once), then
-        press <b>Attack</b> and choose which of your units join in. Artillery (A) may also
+        press <b>Attack</b> and choose which of your units join in. The battle card
+        shows what every face of the die would do at your odds — <b>green</b> favours
+        you, <b>amber</b> is an exchange, <b>red</b> a repulse — then one die decides. Artillery (A) may also
         bombard from 2 hexes away — always voluntary, never from inside an enemy Zone of
         Control, and <b>woods and towns block the line of sight</b>; guns firing from range
         never suffer losses or retreats. Retreats are one hex: a blocked retreat pushes a
