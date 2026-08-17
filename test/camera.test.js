@@ -266,6 +266,33 @@ let game0; // set per-block below
   ok(r.ensureVisible(target) === false, "…then reports nothing left to do");
 }
 {
+  // A whole battle behind the panel is panned — never zoomed — into the strip.
+  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const r = m.r;
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  r.centerOn(off(4, 3));
+  const zoom = r.zoom, size = r.size;
+  const battle = [off(18, 14), off(19, 14), off(18, 15)];
+  ok(r.ensureHexesVisible(battle) === true, "ensureHexesVisible scrolls to a far battle");
+  ok(near(r.zoom, zoom) && near(r.size, size), "…without touching the zoom");
+  ok(battle.every((h) => {
+    const c = r.layout.center(h);
+    return c.x >= 0 && c.x <= 390 && c.y >= 0 && c.y <= 400;
+  }), "…and every hex lands in the uncovered strip");
+  ok(r.ensureHexesVisible(battle) === false, "…then reports nothing left to do");
+
+  // A battle wider than the strip cannot fit whole at this zoom: it is
+  // centred instead — still without zooming.
+  const wide = [off(1, 1), off(22, 16)];
+  r.ensureHexesVisible(wide);
+  ok(near(r.zoom, zoom) && near(r.size, size), "a too-wide battle still never changes the zoom");
+  const cs = wide.map((h) => r.layout.center(h));
+  ok(Math.abs((cs[0].x + cs[1].x) / 2 - 195) < r.size * 2 &&
+     Math.abs((cs[0].y + cs[1].y) / 2 - 200) < r.size * 2,
+     "…its midpoint is brought to the centre of the strip");
+}
+{
   // The clamp has to let the board be pulled up against the panel; otherwise a
   // battle on the southern edge can never be brought out from behind it.
   const { r } = mount(SAMBRE_CROSSING);

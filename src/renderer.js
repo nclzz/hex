@@ -210,14 +210,33 @@
     // Scroll the minimum amount needed to bring `hex` inside the uncovered
     // slice, keeping `margin` hex-widths of context around it.
     ensureVisible(hex, margin = 1.2) {
-      if (!this.vw || !this.vh) return false;
-      const c = this.layout.center(hex), s = this.size, m = s * margin;
-      const sx = this._slice("x"), sy = this._slice("y");
-      let dx = 0, dy = 0;
-      if (c.x - m < sx.lo) dx = c.x - m - sx.lo;
-      else if (c.x + m > sx.hi) dx = c.x + m - sx.hi;
-      if (c.y - m < sy.lo) dy = c.y - m - sy.lo;
-      else if (c.y + m > sy.hi) dy = c.y + m - sy.hi;
+      return this.ensureHexesVisible([hex], margin);
+    }
+
+    // The same, for a set of hexes (a whole battle): pan — never zoom — the
+    // least amount that puts every one of them inside the uncovered slice,
+    // with `margin` hex-widths of context. A set too wide for the slice at
+    // the current zoom cannot fit whole, so it is centred instead, showing
+    // as much of it as the player's chosen scale allows.
+    ensureHexesVisible(hexes, margin = 1.2) {
+      if (!hexes || !hexes.length || !this.vw || !this.vh) return false;
+      const s = this.size, m = s * margin;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const h of hexes) {
+        const c = this.layout.center(h);
+        if (c.x < minX) minX = c.x;
+        if (c.x > maxX) maxX = c.x;
+        if (c.y < minY) minY = c.y;
+        if (c.y > maxY) maxY = c.y;
+      }
+      const shift = (lo, hi, sl) => {
+        if (hi - lo > sl.span) return (lo + hi) / 2 - sl.mid; // too wide: centre
+        if (lo < sl.lo) return lo - sl.lo;
+        if (hi > sl.hi) return hi - sl.hi;
+        return 0;
+      };
+      const dx = shift(minX - m, maxX + m, this._slice("x"));
+      const dy = shift(minY - m, maxY + m, this._slice("y"));
       if (!dx && !dy) return false;
       this.cam.x += dx / s; this.cam.y += dy / s;
       this._applyCamera();

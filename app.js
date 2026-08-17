@@ -623,10 +623,13 @@
     $("cbCard").classList.toggle("collapsed", cbCollapsed);
     $("cbCard").scrollTop = 0;
     show("cbOv");
-    // The sheet docks over the map without touching the camera: same zoom,
-    // same focus. It only tells the camera which strip is still uncovered,
-    // so any framing the PLAYER asks for (Fit, centerOn) uses that strip.
+    // The sheet docks over the map without touching the zoom: it tells the
+    // camera which strip is still uncovered, then pans — never rescales — the
+    // least amount that keeps the battle out from behind the card.
     syncSheetInsets();
+    if (renderer && renderer.ensureHexesVisible([...defenders, ...pending.eligible])) {
+      draw(); syncFit();
+    }
   }
 
   function refreshCombatCard() {
@@ -751,9 +754,13 @@
     box.appendChild(hold);
     $("advBox").hidden = false;
     // The card grew (the advance buttons appeared): re-measure the covered
-    // strip, but leave the camera alone — the player is already looking at
-    // the battle the advance came out of.
+    // strip, then pan just enough to keep the cleared hexes and every unit
+    // that could take one in view — the zoom stays the player's.
     syncSheetInsets();
+    if (renderer && renderer.ensureHexesVisible(
+          [...p.hexes, ...advanceCandidates.map((c) => c.from)])) {
+      draw(); syncFit();
+    }
   }
   function finishAdvance() {
     advanceCandidates = [];
