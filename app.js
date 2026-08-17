@@ -299,14 +299,6 @@
     draw(); syncFit();
   }
 
-  // Put a whole battle on screen in the uncovered strip. Insets first: the
-  // camera must know how much room it has before deciding how to use it.
-  function frameBattle(hexes) {
-    syncSheetInsets();
-    if (renderer && hexes.length) renderer.frameHexes(hexes);
-    draw(); syncFit();
-  }
-
   // ------------------------------- input -----------------------------------
   // A tap selects/moves; a drag pans; two fingers (or the wheel) zoom. The tap
   // only commits on pointerup, once we know the pointer never became a drag.
@@ -631,8 +623,13 @@
     $("cbCard").classList.toggle("collapsed", cbCollapsed);
     $("cbCard").scrollTop = 0;
     show("cbOv");
-    // Show the whole battle above the sheet — who is attacking what, and where.
-    frameBattle([...defenders, ...pending.eligible]);
+    // The sheet docks over the map without touching the zoom: it tells the
+    // camera which strip is still uncovered, then pans — never rescales — the
+    // least amount that keeps the battle out from behind the card.
+    syncSheetInsets();
+    if (renderer && renderer.ensureHexesVisible([...defenders, ...pending.eligible])) {
+      draw(); syncFit();
+    }
   }
 
   function refreshCombatCard() {
@@ -756,8 +753,14 @@
     hold.onclick = () => { game.declineAdvance(); finishAdvance(); };
     box.appendChild(hold);
     $("advBox").hidden = false;
-    // The cleared hexes and every unit that could take one, all on screen.
-    frameBattle([...p.hexes, ...advanceCandidates.map((c) => c.from)]);
+    // The card grew (the advance buttons appeared): re-measure the covered
+    // strip, then pan just enough to keep the cleared hexes and every unit
+    // that could take one in view — the zoom stays the player's.
+    syncSheetInsets();
+    if (renderer && renderer.ensureHexesVisible(
+          [...p.hexes, ...advanceCandidates.map((c) => c.from)])) {
+      draw(); syncFit();
+    }
   }
   function finishAdvance() {
     advanceCandidates = [];

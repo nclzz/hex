@@ -221,15 +221,26 @@ let game0; // set per-block below
   ok(r.zoom > zoom, "…and the zoom ratio climbed to hold it");
 }
 {
-  // A board framed whole reframes into the slice — that is what Fit must mean
-  // while the sheet is open.
+  // Even a board framed whole must not rescale when a panel opens: the panel
+  // covers part of the map, it never shrinks it. The camera is untouched, and
+  // closing the panel restores the exact original view.
   const { r } = mount(RIDGE_ASSAULT);
   r.frameAll();
-  const size = r.size;
+  const size = r.size, cam = { ...r.cam };
   r.setInsets({ bottom: 200 });
-  ok(near(r.zoom, 1), "a fitted board stays fitted when a panel opens");
-  ok(r.size < size, "…re-fitted smaller, into the strip that is left");
-  ok(r.contentOverflows() === false, "…and still shows the whole map");
+  ok(near(r.size, size, 1e-9), "a fitted board keeps its hex size when a panel opens");
+  ok(r.zoom > 1, "…so the zoom ratio climbed instead of re-fitting");
+  ok(near(r.cam.x, cam.x, 1e-6) && near(r.cam.y, cam.y, 1e-6),
+     "…and the camera focus did not move (the panel just covers the bottom)");
+  // The player can still pull the covered part out from behind the panel…
+  const y = r._worldRange("y");
+  r.panByPixels(0, -100000);
+  ok(r.layout.origin.y + y.hi * r.size <= 400 - r.pad + 1e-6,
+     "…panning up brings the board's bottom edge clear of the panel");
+  r.setInsets({});
+  ok(near(r.size, size, 1e-9) && near(r.zoom, 1) &&
+     near(r.cam.x, cam.x, 1e-6) && near(r.cam.y, cam.y, 1e-6),
+     "closing the panel restores the exact original view");
 }
 {
   const m = mount(SAMBRE_CROSSING); game0 = m.game;
@@ -253,6 +264,33 @@ let game0; // set per-block below
   const c = r.layout.center(target);
   ok(c.y >= 0 && c.y <= 400, "…and lands it above the panel, not behind it");
   ok(r.ensureVisible(target) === false, "…then reports nothing left to do");
+}
+{
+  // A whole battle behind the panel is panned — never zoomed — into the strip.
+  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const r = m.r;
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  r.centerOn(off(4, 3));
+  const zoom = r.zoom, size = r.size;
+  const battle = [off(18, 14), off(19, 14), off(18, 15)];
+  ok(r.ensureHexesVisible(battle) === true, "ensureHexesVisible scrolls to a far battle");
+  ok(near(r.zoom, zoom) && near(r.size, size), "…without touching the zoom");
+  ok(battle.every((h) => {
+    const c = r.layout.center(h);
+    return c.x >= 0 && c.x <= 390 && c.y >= 0 && c.y <= 400;
+  }), "…and every hex lands in the uncovered strip");
+  ok(r.ensureHexesVisible(battle) === false, "…then reports nothing left to do");
+
+  // A battle wider than the strip cannot fit whole at this zoom: it is
+  // centred instead — still without zooming.
+  const wide = [off(1, 1), off(22, 16)];
+  r.ensureHexesVisible(wide);
+  ok(near(r.zoom, zoom) && near(r.size, size), "a too-wide battle still never changes the zoom");
+  const cs = wide.map((h) => r.layout.center(h));
+  ok(Math.abs((cs[0].x + cs[1].x) / 2 - 195) < r.size * 2 &&
+     Math.abs((cs[0].y + cs[1].y) / 2 - 200) < r.size * 2,
+     "…its midpoint is brought to the centre of the strip");
 }
 {
   // The clamp has to let the board be pulled up against the panel; otherwise a
