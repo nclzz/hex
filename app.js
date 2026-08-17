@@ -575,18 +575,7 @@
     Ar: { cls: "bad",   head: "Attack repulsed!",     big: false },
     Ae: { cls: "bad",   head: "Attack shattered!",    big: true  },
   };
-  let rolling = false; // a die is tumbling: the card's inputs are committed
-
-  // The die face: pips on a 3×3 grid, indexed row-major.
-  const PIP_FACES = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
-  const dieEl = $("die");
-  for (let i = 0; i < 9; i++) {
-    const p = document.createElement("span"); p.className = "pip"; dieEl.appendChild(p);
-  }
-  function setDieFace(n) {
-    const on = PIP_FACES[n - 1];
-    for (let i = 0; i < 9; i++) dieEl.children[i].classList.toggle("on", on.includes(i));
-  }
+  let rolling = false; // the die is in the air: the card's inputs are committed
 
   // Haptics, where the device offers them (same guard as the hex inspector).
   const buzz = (pattern) => {
@@ -676,9 +665,7 @@
     $("cbInfo").style.display = "";
     $("dieBox").textContent = "";
     rolling = false;
-    $("rollZone").hidden = true;
     $("verdict").hidden = true;
-    $("die").classList.remove("landed");
     $("cancelBtn").disabled = false;
     $("cbBtns").style.display = "flex";
     $("advBox").hidden = true;
@@ -761,8 +748,9 @@
   $("lowerBtn").onclick = () => { if (pending) { pending.lower++; refreshCombatCard(); } };
   $("lowerReset").onclick = () => { if (pending) { pending.lower = 0; refreshCombatCard(); } };
   $("cancelBtn").onclick = () => { pending = null; closeCombatSheet(); draw(); syncSel(); syncAttack(); };
-  // Attack! throws the die: it tumbles with decelerating ticks — random faces,
-  // a wobble, a click per bounce — then resolve() lands it on the real face.
+  // Attack! throws the die as a sweep along the odds strip itself: the
+  // highlight runs across the six cells with decelerating ticks — a click per
+  // step — then resolve() settles it on the cell the engine actually rolled.
   $("resolveBtn").onclick = () => {
     if (!pending || rolling) return;
     rolling = true;
@@ -770,18 +758,16 @@
     $("cancelBtn").disabled = true;
     $("lowerBtn").hidden = true; // committed: the odds can no longer change
     $("lowerReset").hidden = true;
-    $("rollZone").hidden = false;
-    dieEl.classList.remove("landed");
-    syncSheetInsets(); // the die grew the card
-    let ticks = 0, delay = 45;
-    const tumble = () => {
-      setDieFace(1 + Math.floor(Math.random() * 6));
-      dieEl.style.transform = `rotate(${(Math.random() * 36 - 18).toFixed(1)}deg)`;
+    const cells = [...$("crtStrip").children];
+    let ticks = 0, delay = 40, pos = Math.floor(Math.random() * 6);
+    const sweep = () => {
+      cells.forEach((c, i) => c.classList.toggle("run", i === pos % 6));
       sfx("tick");
-      if (++ticks < 9) { delay *= 1.28; setTimeout(tumble, delay); }
+      pos++;
+      if (++ticks < 12) { delay *= 1.2; setTimeout(sweep, delay); }
       else resolve();
     };
-    tumble();
+    sweep();
   };
   // The sheet has said everything it had to: close it and hand back the board.
   function dismissBattle() { closeCombatSheet(); draw(); syncSel(); syncAttack(); syncHud(); }
@@ -804,15 +790,14 @@
       return;
     }
     lastBattle = ground;
-    // Land the die on the face the engine actually rolled: settle bounce,
-    // thud, and the matching cell of the odds strip lights while the misses
-    // fade — the strip the player has been staring at explains the outcome.
-    setDieFace(res.die);
-    dieEl.style.transform = "";
-    dieEl.classList.add("landed");
+    // Settle the sweep on the face the engine actually rolled: the cell pops
+    // with a thud while the misses fade — the strip the player has been
+    // staring at explains the outcome by itself.
     sfx("land"); buzz(30);
-    for (const [i, cell] of [...$("crtStrip").children].entries())
+    for (const [i, cell] of [...$("crtStrip").children].entries()) {
+      cell.classList.remove("run");
       cell.classList.add(i === res.die - 1 ? "hit" : "dud");
+    }
     flash(`${colLabel(res.column)} · roll ${res.die} → ${res.note}`);
     $("cbBtns").style.display = "none";
     draw(); syncHud();
@@ -911,7 +896,6 @@
   function reopenAdvance() {
     $("cbTitle").textContent = "Advance After Combat";
     $("cbInfo").style.display = "none";
-    $("rollZone").hidden = true;
     $("verdict").hidden = true;
     $("dieBox").textContent = "The last battle cleared a hex.";
     $("cbBtns").style.display = "none";
