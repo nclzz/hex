@@ -12,6 +12,13 @@
    Camera state:
      zoom  1 = the whole board fits (the old auto-fit); higher = closer in.
      cam   the WORLD point (size-1 hex units) sitting at the viewport centre.
+
+   The app may cover part of the canvas with a docked panel (the battle sheet).
+   `insets` names that covered margin; the board still DRAWS across the whole
+   canvas, but everything about framing — fit, centring, clamping — works on
+   the uncovered SLICE, so the action never ends up behind the panel. `cam`
+   keeps meaning "the world point at the canvas centre", so panning, zooming
+   and hit-testing are untouched; with zero insets nothing below changes.
    ========================================================================= */
 (function (global) {
   "use strict";
@@ -20,6 +27,7 @@
   const MAX_HEX_PX = 46;      // don't zoom in past this hex circumradius
   const DEFAULT_HEX_PX = 30;  // comfortable counter size when we must zoom in
   const MIN_LEGIBLE_PX = 18;  // below this, a fitted board is too small to play
+  const MIN_SLICE_PX = 80;    // an inset leaving less than this is ignored
 
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -37,6 +45,7 @@
       this.fitSize = 24;    // hex size at which the whole board fits
       this.zoom = 1;
       this.cam = { x: 0, y: 0 };
+      this.insets = { top: 0, right: 0, bottom: 0, left: 0 }; // covered by UI
       // Drawing hooks supplied by the app:
       this.terrainColor = opts.terrainColor || (() => "#ccc");
       this.drawUnit = opts.drawUnit || (() => {});
@@ -80,6 +89,34 @@
       this.setBoard(hexes);
       this.resize(container);
       this.frameAll();
+    }
+
+    // Declare which margins of the canvas are covered by UI. Like resize(), this
+    // changes what "fits", so we hold the absolute hex size rather than the zoom
+    // ratio — the map must not visibly shrink just because a panel opened.
+    setInsets(ins = {}) {
+      const next = { top: 0, right: 0, bottom: 0, left: 0, ...ins };
+      const cur = this.insets;
+      if (next.top === cur.top && next.right === cur.right &&
+          next.bottom === cur.bottom && next.left === cur.left) return false;
+      const oldSize = this.size, wasFitted = this.isAtMinZoom();
+      this.insets = next;
+      this._recomputeFit();
+      this.zoom = wasFitted ? 1 : clamp(oldSize / this.fitSize, 1, this.maxZoom);
+      this._applyCamera();
+      return true;
+    }
+
+    // The uncovered interval of the canvas along an axis, in screen px. An
+    // inset that would leave no room to play falls back to the whole canvas.
+    _slice(axis) {
+      const view = axis === "x" ? this.vw : this.vh;
+      const i = this.insets;
+      const lo = axis === "x" ? i.left : i.top;
+      const hi = view - (axis === "x" ? i.right : i.bottom);
+      if (hi - lo < MIN_SLICE_PX)
+        return { lo: 0, hi: view, span: view, mid: view / 2 };
+      return { lo, hi, span: hi - lo, mid: (lo + hi) / 2 };
     }
 
     get maxZoom() { return Math.max(1, MAX_HEX_PX / this.fitSize); }
@@ -131,31 +168,62 @@
 
     centerOn(hex) {
       const w = Hex.Layout.worldOf(hex, this.orientation);
-      this.cam.x = w.x; this.cam.y = w.y;
+      this._centerWorld(w.x, w.y);
+    }
+
+    // Put a world point at the centre of the UNCOVERED slice.
+    _centerWorld(wx, wy) {
+      const s = this.size;
+      this.cam.x = wx - (this._slice("x").mid - this.vw / 2) / s;
+      this.cam.y = wy - (this._slice("y").mid - this.vh / 2) / s;
       this._applyCamera();
     }
 
-    // Scroll the minimum amount needed to bring `hex` inside the viewport,
-    // keeping `margin` hex-widths of context around it.
+    // Frame a set of hexes — a whole battle — in the uncovered slice: centre on
+    // them, and zoom OUT only as far as needed to fit. Never zooms in: the
+    // player's chosen scale is theirs, we only ever pull back to show more.
+    frameHexes(hexes, margin = 1.2) {
+      if (!hexes || !hexes.length || !this.vw || !this.vh) return;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const h of hexes) {
+        const w = Hex.Layout.worldOf(h, this.orientation);
+        if (w.x < minX) minX = w.x;
+        if (w.x > maxX) maxX = w.x;
+        if (w.y < minY) minY = w.y;
+        if (w.y > maxY) maxY = w.y;
+      }
+      const need = (span, extent) => span / Math.max(extent + 2 * margin, 1e-6);
+      const fitSize = Math.min(
+        need(this._slice("x").span, maxX - minX),
+        need(this._slice("y").span, maxY - minY)
+      );
+      this.zoom = clamp(fitSize / this.fitSize, 1, this.zoom);
+      this._centerWorld((minX + maxX) / 2, (minY + maxY) / 2);
+    }
+
+    // Scroll the minimum amount needed to bring `hex` inside the uncovered
+    // slice, keeping `margin` hex-widths of context around it.
     ensureVisible(hex, margin = 1.2) {
       if (!this.vw || !this.vh) return false;
       const c = this.layout.center(hex), s = this.size, m = s * margin;
+      const sx = this._slice("x"), sy = this._slice("y");
       let dx = 0, dy = 0;
-      if (c.x - m < 0) dx = c.x - m;
-      else if (c.x + m > this.vw) dx = c.x + m - this.vw;
-      if (c.y - m < 0) dy = c.y - m;
-      else if (c.y + m > this.vh) dy = c.y + m - this.vh;
+      if (c.x - m < sx.lo) dx = c.x - m - sx.lo;
+      else if (c.x + m > sx.hi) dx = c.x + m - sx.hi;
+      if (c.y - m < sy.lo) dy = c.y - m - sy.lo;
+      else if (c.y + m > sy.hi) dy = c.y + m - sy.hi;
       if (!dx && !dy) return false;
       this.cam.x += dx / s; this.cam.y += dy / s;
       this._applyCamera();
       return true;
     }
 
-    // Does the board extend past the viewport at the current zoom?
+    // Does the board extend past the part of the viewport we can use?
     contentOverflows() {
       if (!this.bounds) return false;
       const s = this.size, b = this.bounds;
-      return b.spanX * s > this.vw + 0.5 || b.spanY * s > this.vh + 0.5;
+      return b.spanX * s > this._slice("x").span + 0.5 ||
+             b.spanY * s > this._slice("y").span + 0.5;
     }
 
     /* --------------------------- camera internals ------------------------- */
@@ -164,8 +232,8 @@
       if (!this.bounds || !this.vw || !this.vh) return;
       const b = this.bounds;
       this.fitSize = Math.max(1, Math.min(
-        (this.vw - 2 * this.pad) / b.spanX,
-        (this.vh - 2 * this.pad) / b.spanY
+        (this._slice("x").span - 2 * this.pad) / b.spanX,
+        (this._slice("y").span - 2 * this.pad) / b.spanY
       ));
     }
 
@@ -180,19 +248,25 @@
     _worldMid(axis) { const r = this._worldRange(axis); return (r.lo + r.hi) / 2; }
 
     // Keep the board anchored: centred on an axis it doesn't fill, otherwise
-    // clamped so its edge can never be dragged inside the viewport edge.
+    // clamped so its edge can never be dragged inside the viewport edge. The
+    // rule is applied to the uncovered slice, which is what lets the board be
+    // panned up against a docked panel instead of being yanked back under it.
     _clampCam() {
       if (!this.bounds) return;
       const s = this.size;
       for (const axis of ["x", "y"]) {
         const view = axis === "x" ? this.vw : this.vh;
+        const sl = this._slice(axis);
+        const off = (sl.mid - view / 2) / s; // cam -> the world point at slice centre
         const { lo, hi } = this._worldRange(axis);
-        if ((hi - lo) * s + 2 * this.pad <= view) {
-          this.cam[axis] = (lo + hi) / 2;
+        let mid = this.cam[axis] + off;
+        if ((hi - lo) * s + 2 * this.pad <= sl.span) {
+          mid = (lo + hi) / 2;
         } else {
-          const slack = (view / 2 - this.pad) / s;
-          this.cam[axis] = clamp(this.cam[axis], lo + slack, hi - slack);
+          const slack = (sl.span / 2 - this.pad) / s;
+          mid = clamp(mid, lo + slack, hi - slack);
         }
+        this.cam[axis] = mid - off;
       }
     }
 
