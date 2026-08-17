@@ -781,7 +781,9 @@
     };
     tumble();
   };
-  $("contBtn").onclick = () => { closeCombatSheet(); draw(); syncSel(); syncAttack(); syncHud(); };
+  // The sheet has said everything it had to: close it and hand back the board.
+  function dismissBattle() { closeCombatSheet(); draw(); syncSel(); syncAttack(); syncHud(); }
+  $("contBtn").onclick = dismissBattle;
 
   function resolve() {
     const picked = pending.eligible.filter((a) => pending.chosen.has(a.id));
@@ -900,13 +902,9 @@
       draw(); syncFit();
     }
   }
-  function finishAdvance() {
-    advanceCandidates = [];
-    activeCandidate = null;
-    $("advBox").hidden = true;
-    $("contBtn").style.display = "block";
-    draw(); syncSel(); syncSheetInsets();
-  }
+  // Advance taken or declined — that was the last decision on the card, so
+  // it closes right away (closeCombatSheet clears the advance highlights).
+  function finishAdvance() { dismissBattle(); }
   // A save made mid-prompt restores with the advance still pending: reopen it.
   function reopenAdvance() {
     $("cbTitle").textContent = "Advance After Combat";
