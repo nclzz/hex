@@ -141,6 +141,20 @@
   }
 
   // ------------------------------- rendering -------------------------------
+  // The battle just fought, and the advances it opened. `targets` is emptied
+  // the moment the dice land, so without these the board would go blank exactly
+  // when the advance prompt asks the player to read it.
+  let lastBattle = null;      // {attackers:[{q,r}], defenders:[{q,r}]}
+  let advanceCandidates = []; // [{unitId, from, to, accent}] — one per button
+  let activeCandidate = null; // unitId being previewed from its button
+  // Hues that read against the terrain palette and don't collide with the gold
+  // grouping ring, the mandatory red or the amber "still owes an attack".
+  const ADV_ACCENTS = ["#4fd1e0", "#e07ad1", "#9ee04f", "#f0913e"];
+  const accentA = (hex, a) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+
   function highlights() {
     const hs = [];
     if (game.phase === "move" && selected) {
@@ -175,6 +189,24 @@
                     scale: 0.88, dash: bombarding ? [5, 4] : null });
         }
       }
+      // The battle just resolved: keep its ground marked while the result line
+      // and the advance prompt are being read.
+      if (lastBattle) {
+        for (const d of lastBattle.defenders)
+          hs.push({ hex: d, fill: "rgba(226,64,44,.26)", stroke: "rgba(226,64,44,.85)",
+                    lineWidth: 3, scale: 0.93 });
+        for (const a of lastBattle.attackers)
+          hs.push({ hex: a, stroke: "rgba(255,255,255,.6)", lineWidth: 2, scale: 0.86 });
+      }
+      // Every advance on offer, tied by colour to the button that takes it: a
+      // dashed ring on the unit, the cleared hex it would move into filled.
+      for (const c of advanceCandidates) {
+        const on = activeCandidate === c.unitId;
+        hs.push({ hex: c.to, fill: accentA(c.accent, on ? 0.5 : 0.3),
+                  stroke: c.accent, lineWidth: on ? 5 : 3, scale: 0.94 });
+        hs.push({ hex: c.from, stroke: c.accent, lineWidth: on ? 5 : 3,
+                  scale: 0.86, dash: [6, 4] });
+      }
     }
     if (inspected) hs.push({ hex: inspected, stroke: "rgba(255,255,255,.85)", lineWidth: 2, scale: 0.9 });
     return hs;
@@ -196,6 +228,9 @@
   function relayout() {
     if (!game || !renderer) return;
     renderer.resize(boardWrap);
+    // A rotation can flip the sheet between the bottom edge and the side rail,
+    // which moves which margin the camera has to keep clear.
+    if (combatSheetOpen()) syncSheetInsets();
     draw(); syncFit();
   }
 
@@ -234,6 +269,44 @@
     draw(); syncFit();
   };
 
+  // ----------------------- the battle sheet's geometry ----------------------
+  // The battle card docks to an edge of the board rather than covering it. Tell
+  // the camera WHICH edge and how much, so every bit of framing it does happens
+  // in the strip the player can actually see. Landscape on a phone has no
+  // vertical room to give away, so there the card becomes a side rail — the
+  // media query below must stay in step with the one in index.html.
+  const RAIL_MQ = "(orientation: landscape) and (max-height: 560px)";
+  const combatSheetOpen = () => $("cbOv").classList.contains("show");
+  const railMode = () => !!(global.matchMedia && global.matchMedia(RAIL_MQ).matches);
+
+  // The Fit and ? buttons sit over the top of the board permanently, and the
+  // toast lane runs just below them — a battle framed up there reads no better
+  // than one framed behind the card. Reserve the button row; the toast is
+  // transient enough not to be worth the board space it would cost.
+  const TOP_CHROME_PX = 40;
+
+  function syncSheetInsets() {
+    if (!renderer) return;
+    const card = $("cbCard");
+    let ins = { top: 0, right: 0, bottom: 0, left: 0 };
+    if (combatSheetOpen())
+      ins = railMode()
+        ? { top: TOP_CHROME_PX, right: card.offsetWidth, bottom: 0, left: 0 }
+        : { top: TOP_CHROME_PX, right: 0, bottom: card.offsetHeight, left: 0 };
+    renderer.setInsets(ins);
+    // The hex inspector lives in the bottom-left corner; lift it clear.
+    document.documentElement.style.setProperty("--cb-inset-bottom", ins.bottom + "px");
+    draw(); syncFit();
+  }
+
+  // Put a whole battle on screen in the uncovered strip. Insets first: the
+  // camera must know how much room it has before deciding how to use it.
+  function frameBattle(hexes) {
+    syncSheetInsets();
+    if (renderer && hexes.length) renderer.frameHexes(hexes);
+    draw(); syncFit();
+  }
+
   // ------------------------------- input -----------------------------------
   // A tap selects/moves; a drag pans; two fingers (or the wheel) zoom. The tap
   // only commits on pointerup, once we know the pointer never became a drag.
@@ -263,7 +336,11 @@
     const r = canvas.getBoundingClientRect();
     return { x: ev.clientX - r.left, y: ev.clientY - r.top };
   }
-  function boardBusy() { return !game || game.over || anyOverlay(); }
+  // The battle sheet is deliberately NOT in this list: it docks to an edge and
+  // leaves the board live, so the player can look around before committing to a
+  // battle or an advance. Board taps stay suppressed (see commitTap) — only
+  // panning, zooming and press-and-hold inspection remain.
+  function boardBusy() { return !game || game.over || anyBlockingOverlay(); }
 
   function startPinch() {
     const ids = [...pointers.keys()].slice(0, 2);
@@ -369,6 +446,12 @@
 
   function commitTap(x, y) {
     if (boardBusy()) return;
+    // With the battle sheet open the board is for reading, not for regrouping:
+    // openCombat() already snapshotted the battle being fought.
+    if (combatSheetOpen()) {
+      if (inspected) { inspected = null; renderInspector(); draw(); }
+      return;
+    }
     const hex = renderer.pick(game, x, y);
     if (!hex) {
       selected = null; reachable = new Map(); inspected = null;
@@ -530,8 +613,13 @@
     $("cbBtns").style.display = "flex";
     $("advBox").hidden = true;
     $("contBtn").style.display = "none";
+    lastBattle = null;
     refreshCombatCard();
+    $("cbCard").classList.toggle("collapsed", cbCollapsed);
+    $("cbCard").scrollTop = 0;
     show("cbOv");
+    // Show the whole battle above the sheet — who is attacking what, and where.
+    frameBattle([...defenders, ...pending.eligible]);
   }
 
   function refreshCombatCard() {
@@ -577,7 +665,7 @@
   // The attacker may deliberately fight at lower odds [6.2].
   $("lowerBtn").onclick = () => { if (pending) { pending.lower++; refreshCombatCard(); } };
   $("lowerReset").onclick = () => { if (pending) { pending.lower = 0; refreshCombatCard(); } };
-  $("cancelBtn").onclick = () => { pending = null; hide("cbOv"); draw(); syncSel(); syncAttack(); };
+  $("cancelBtn").onclick = () => { pending = null; closeCombatSheet(); draw(); syncSel(); syncAttack(); };
   $("resolveBtn").onclick = () => {
     if (!pending) return;
     $("resolveBtn").disabled = true;
@@ -587,22 +675,29 @@
       if (++ticks >= 8) { clearInterval(spin); resolve(); }
     }, 55);
   };
-  $("contBtn").onclick = () => { hide("cbOv"); draw(); syncSel(); syncAttack(); syncHud(); };
+  $("contBtn").onclick = () => { closeCombatSheet(); draw(); syncSel(); syncAttack(); syncHud(); };
 
   function resolve() {
     const picked = pending.eligible.filter((a) => pending.chosen.has(a.id));
+    // Snapshot the ground BEFORE the engine moves anyone: the result line and
+    // the advance prompt are read against where the battle was fought.
+    const ground = {
+      attackers: picked.map((a) => ({ q: a.q, r: a.r })),
+      defenders: pending.defenders.map((d) => ({ q: d.q, r: d.r })),
+    };
     const res = game.resolveCombat(pending.defenders, picked, { lower: pending.lower });
     pending = null;
     targets = [];
     if (!res.ok) { // the engine refused (should be rare — the card validates)
-      hide("cbOv"); flash(res.reason); draw(); syncSel(); syncAttack();
+      closeCombatSheet(); flash(res.reason); draw(); syncSel(); syncAttack();
       return;
     }
+    lastBattle = ground;
     $("dieBox").innerHTML = `Die <b>${res.die}</b> → <b>${res.code}</b> — ${res.note}`;
     flash(`${colLabel(res.column)} · roll ${res.die} → ${res.note}`);
     $("cbBtns").style.display = "none";
     if (res.advance && game.pendingAdvance) showAdvance();
-    else $("contBtn").style.display = "block";
+    else { $("contBtn").style.display = "block"; syncSheetInsets(); }
     draw(); syncHud();
   }
 
@@ -616,13 +711,30 @@
       `${fac.name}: a hex was cleared — advance into it?`;
     const box = $("advBtns");
     box.innerHTML = "";
+    advanceCandidates = [];
+    activeCandidate = null;
     for (const id of p.unitIds) {
       const u = game.units[id], t = game.typeOf(u);
       const hex = p.hexes.find((h) => Hx().distance(u, h) === 1);
       if (!hex) continue;
+      // Colour ties the button to a place on the map: "Advance A 5·3" says
+      // nothing about WHICH way, and that is the whole decision.
+      const accent = ADV_ACCENTS[advanceCandidates.length % ADV_ACCENTS.length];
+      advanceCandidates.push({
+        unitId: u.id, from: { q: u.q, r: u.r }, to: { q: hex.q, r: hex.r }, accent,
+      });
       const b = document.createElement("button");
-      b.textContent = `Advance ${t.glyph} ${t.combat}·${t.move}`;
+      b.innerHTML = `<i style="background:${accent}"></i>Advance ${t.glyph} ${t.combat}·${t.move}`;
       b.onclick = () => { game.advanceAfterCombat(u, hex.q, hex.r); finishAdvance(); };
+      // Touch (or hover) a button to preview that move on the board first.
+      const preview = (on) => {
+        activeCandidate = on ? u.id : null;
+        b.classList.toggle("on", on);
+        draw();
+      };
+      b.addEventListener("pointerenter", () => preview(true));
+      b.addEventListener("pointerleave", () => preview(false));
+      b.addEventListener("pointerdown", () => preview(true));
       box.appendChild(b);
     }
     const hold = document.createElement("button");
@@ -631,11 +743,15 @@
     hold.onclick = () => { game.declineAdvance(); finishAdvance(); };
     box.appendChild(hold);
     $("advBox").hidden = false;
+    // The cleared hexes and every unit that could take one, all on screen.
+    frameBattle([...p.hexes, ...advanceCandidates.map((c) => c.from)]);
   }
   function finishAdvance() {
+    advanceCandidates = [];
+    activeCandidate = null;
     $("advBox").hidden = true;
     $("contBtn").style.display = "block";
-    draw(); syncSel();
+    draw(); syncSel(); syncSheetInsets();
   }
   // A save made mid-prompt restores with the advance still pending: reopen it.
   function reopenAdvance() {
@@ -644,15 +760,50 @@
     $("dieBox").textContent = "The last battle cleared a hex.";
     $("cbBtns").style.display = "none";
     $("contBtn").style.display = "none";
+    $("cbCard").classList.toggle("collapsed", cbCollapsed);
+    show("cbOv"); // shown first: showAdvance() measures the card to inset the camera
     showAdvance();
-    show("cbOv");
   }
+
+  // ------------------------ the sheet's own controls ------------------------
+  // Collapsing folds the reference rows away and hands the map the space; the
+  // decision row (the buttons, the result) always stays. Instant, like every
+  // other state change in this app.
+  let cbCollapsed = false;
+  function closeCombatSheet() {
+    hide("cbOv");
+    lastBattle = null;
+    advanceCandidates = [];
+    activeCandidate = null;
+    syncSheetInsets();
+  }
+  (function wireSheetHandle() {
+    const h = $("cbHandle");
+    let downY = null;
+    h.addEventListener("pointerdown", (ev) => {
+      downY = ev.clientY;
+      try { h.setPointerCapture(ev.pointerId); } catch (e) { /* not captureable */ }
+    });
+    h.addEventListener("pointerup", (ev) => {
+      if (downY == null) return;
+      const dy = ev.clientY - downY;
+      downY = null;
+      // A tap toggles; a deliberate drag says which way.
+      cbCollapsed = Math.abs(dy) <= TAP_SLOP ? !cbCollapsed : dy > 0;
+      $("cbCard").classList.toggle("collapsed", cbCollapsed);
+      syncSheetInsets();
+    });
+    h.addEventListener("pointercancel", () => { downY = null; });
+  })();
 
   // ------------------------------ overlays ---------------------------------
   const OVERLAYS = ["startOv", "wizOv", "passOv", "cbOv", "winOv", "helpOv"];
   const show = (id) => $(id).classList.add("show");
   const hide = (id) => $(id).classList.remove("show");
+  // Every overlay blocks the HUD buttons; only the modal ones block the board.
   const anyOverlay = () => OVERLAYS.some((id) => $(id).classList.contains("show"));
+  const anyBlockingOverlay = () =>
+    OVERLAYS.some((id) => id !== "cbOv" && $(id).classList.contains("show"));
 
   function showPass() {
     const fac = factionById(game.activeFaction);
@@ -702,7 +853,7 @@
       b.onclick = () => showWizard(def);
       list.appendChild(b);
     }
-    hide("cbOv"); hide("winOv"); hide("wizOv");
+    closeCombatSheet(); hide("winOv"); hide("wizOv");
     document.body.classList.add("nogame");
     show("startOv");
   }
@@ -773,7 +924,7 @@
   };
   attackBtn.onclick = () => {
     if (!game || game.over || anyOverlay() || game.phase !== "combat") return;
-    if (targets.length) { focus(targets[0]); openCombat(targets.slice()); }
+    if (targets.length) openCombat(targets.slice()); // openCombat frames the battle
   };
   const exitBtn = $("exitBtn");
   exitBtn.onclick = () => {
@@ -967,14 +1118,20 @@
     game.events.on("phase", save);
     game.events.on("gameover", clearSave);
 
-    hide("cbOv"); hide("winOv");
+    closeCombatSheet(); hide("winOv");
     if (!resumedCamera) focusActive();
     draw(); syncHud(); syncFit(); showPass();
     global.__game = game; global.__renderer = renderer; // for smoke-testing
     save(); // starting (or resuming) a game claims the one slot immediately
   }
 
-  if (global.ResizeObserver) new global.ResizeObserver(relayout).observe(boardWrap);
+  if (global.ResizeObserver) {
+    new global.ResizeObserver(relayout).observe(boardWrap);
+    // The sheet grows and shrinks as its content changes — chips appearing, the
+    // die result, the advance buttons. Re-inset the camera whenever it does.
+    new global.ResizeObserver(() => { if (combatSheetOpen()) syncSheetInsets(); })
+      .observe($("cbCard"));
+  }
   global.addEventListener("resize", relayout);
   global.addEventListener("orientationchange", relayout);
   // Catch camera-only changes (panning saves nothing per frame): persist when

@@ -149,6 +149,16 @@ chart. Sambre Crossing's river is a true hexside river with three bridges.
   red, your obligated units amber), press **Attack**, toggle the attacker
   chips if you want to hold units back, and roll. Answer the advance prompt
   when you clear a hex.
+- **The battle card is a sheet, not a modal.** It docks to the bottom edge
+  (to the side in landscape) and the map above it stays live: the camera
+  frames the whole battle in the strip the card leaves free, and you can
+  drag, pinch and press-and-hold to inspect while you decide. Drag or tap
+  its grab handle to fold the reference rows away and hand the map the rest
+  of the screen — the buttons never go anywhere.
+- **The advance prompt names a place, not just a counter.** Each "Advance"
+  button carries the colour its unit and its destination hex are drawn with
+  on the map; touch one to light that move up before you commit. The hexes
+  the battle was just fought over stay marked while you read the result.
 - Counters read **letter + `CS·MA`** — combat strength and movement
   allowance. Artillery adds a third number, its **range**. Prussian counters
   are slate-dark so the Allied player can tell their armies apart.
@@ -178,6 +188,11 @@ The board can be larger than the screen. A camera handles that:
 A tap only counts if you barely moved, so scrolling can never nudge a unit. The
 map can't be dragged off into nothing, and the camera follows the action.
 
+The camera also knows when part of the screen is covered. While the battle
+sheet is docked it fits, centres and clamps against the *uncovered* strip
+only — so **Fit** frames the whole board above the card, the map can be
+panned right up against its edge, and a battle can never be framed behind it.
+
 ---
 
 ## Project layout — the engine, the common rules, the games
@@ -194,7 +209,8 @@ src/
                            mandatory-combat bookkeeping, advance after combat,
                            reinforcements, per-army loss tracking, save/restore.
                            The NAW common rules ARE the engine; DOM-free.
-  renderer.js              Canvas renderer + camera: drawing, pan/zoom, picking
+  renderer.js              Canvas renderer + camera: drawing, pan/zoom, picking,
+                           and viewport insets so framing dodges a docked panel
 games/
   napoleon-at-war-common.js  the SERIES: the NAW CRT, terrain chart, combat
                            results, demoralization helpers, buildScenario().
@@ -203,13 +219,14 @@ games/
   ridge-assault.js         demoralization levels, victory — the exclusive
   sambre-crossing.js       rules. Each registers itself in `HEX_SCENARIOS`.
 app.js                     glue for this app: gestures, HUD, overlays, the
-                           battle dialog (attacker chips, advance prompt)
+                           battle sheet (attacker chips, advance prompt, the
+                           board highlights that go with them)
 test/
   engine.test.js           core rules: movement, ZOC, combat, victory
   naw.test.js              the NAW layer: locking, mandatory combat, CRT
                            bands, strict retreats, advances, demoralization,
                            reinforcements, save/restore of it all
-  camera.test.js           camera math + scenario-integrity checks
+  camera.test.js           camera math (incl. viewport insets) + scenario checks
   persist.test.js          save/resume round trips and rejection of bad saves
 ```
 
@@ -241,7 +258,7 @@ how the rivers work.
 npm test          # pure Node, no install needed
 ```
 
-396 headless assertions across the four suites above, plus an optional
+429 headless assertions across the four suites above, plus an optional
 browser smoke test (Playwright) that drives a real battle — mandatory combat,
 the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 

@@ -189,6 +189,127 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
   ok(r.ensureVisible(far) === false, "ensureVisible is a no-op once already visible");
 }
 
+/* --- viewport insets: framing dodges a docked panel -------------------- */
+const off = (c, rw) => game0.hex(...Object.values(Hex.offsetToAxial(c, rw, "odd-r")));
+let game0; // set per-block below
+{
+  // Declaring no insets changes nothing at all.
+  const { r } = mount(SAMBRE_CROSSING);
+  r.frameDefault();
+  const size = r.size, cam = { ...r.cam };
+  ok(r.setInsets({}) === false, "setInsets with no insets reports no change");
+  ok(near(r.size, size) && near(r.cam.x, cam.x) && near(r.cam.y, cam.y),
+     "…and leaves the camera exactly where it was");
+  ok(near(r._slice("y").span, 600) && near(r._slice("x").span, 390),
+     "the uncovered slice defaults to the whole canvas");
+}
+{
+  // Opening a panel must not visibly shrink the map: the absolute hex size is
+  // held, exactly as across a resize.
+  const { r } = mount(SAMBRE_CROSSING);
+  r.frameDefault();
+  const size = r.size, zoom = r.zoom;
+  ok(r.setInsets({ bottom: 220 }) === true, "setInsets reports the change");
+  ok(near(r.size, size, 1e-9), "a docked panel holds the on-screen hex size");
+  ok(r.zoom >= zoom, "…never by zooming the player out");
+  ok(near(r._slice("y").span, 380), "the slice is the canvas minus the panel");
+  ok(near(r._slice("y").mid, 190), "…and its centre sits above the panel");
+  // Deep enough that the covered axis becomes the one that binds the fit: the
+  // zoom ratio has to climb to keep the hexes the same size on screen.
+  r.setInsets({ bottom: 380 });
+  ok(near(r.size, size, 1e-9), "…still the same hex size once the panel binds the fit");
+  ok(r.zoom > zoom, "…and the zoom ratio climbed to hold it");
+}
+{
+  // A board framed whole reframes into the slice — that is what Fit must mean
+  // while the sheet is open.
+  const { r } = mount(RIDGE_ASSAULT);
+  r.frameAll();
+  const size = r.size;
+  r.setInsets({ bottom: 200 });
+  ok(near(r.zoom, 1), "a fitted board stays fitted when a panel opens");
+  ok(r.size < size, "…re-fitted smaller, into the strip that is left");
+  ok(r.contentOverflows() === false, "…and still shows the whole map");
+}
+{
+  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const r = m.r;
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  const mid = off(12, 9);
+  r.centerOn(mid);
+  ok(near(r.layout.center(mid).y, 200, 1e-6),
+     "centerOn parks the hex in the middle of the UNCOVERED strip");
+  ok(near(r.layout.center(mid).x, 195, 1e-6), "…and horizontally as before");
+}
+{
+  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const r = m.r;
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  r.centerOn(off(2, 2));
+  const target = off(20, 16);
+  ok(r.ensureVisible(target) === true, "ensureVisible still scrolls to a far hex");
+  const c = r.layout.center(target);
+  ok(c.y >= 0 && c.y <= 400, "…and lands it above the panel, not behind it");
+  ok(r.ensureVisible(target) === false, "…then reports nothing left to do");
+}
+{
+  // The clamp has to let the board be pulled up against the panel; otherwise a
+  // battle on the southern edge can never be brought out from behind it.
+  const { r } = mount(SAMBRE_CROSSING);
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  const PAD = r.pad, y = r._worldRange("y");
+  r.panByPixels(0, -100000); // drag the board up, revealing its bottom edge
+  ok(near(r.layout.origin.y + y.hi * r.size, 600 - 200 - PAD, 1e-6),
+     "panning up stops with the board's bottom edge at the panel, not the canvas");
+  r.panByPixels(0, 100000);
+  ok(near(r.layout.origin.y + y.lo * r.size, PAD, 1e-6),
+     "…and the top edge still stops at the padding");
+}
+{
+  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const r = m.r;
+  r.frameDefault();
+  r.setInsets({ bottom: 200 });
+  const zoom = r.zoom;
+  const battle = [off(4, 3), off(5, 3), off(4, 4)];
+  r.frameHexes(battle);
+  ok(r.zoom <= zoom + 1e-9, "frameHexes never zooms IN on the player");
+  const inSlice = battle.every((h) => {
+    const c = r.layout.center(h);
+    return c.x >= 0 && c.x <= 390 && c.y >= 0 && c.y <= 400;
+  });
+  ok(inSlice, "…and puts every hex of the battle in the uncovered strip");
+
+  // A battle spread across the whole map has to pull the camera back.
+  const wide = [off(1, 1), off(22, 16)];
+  r.frameHexes(wide);
+  ok(r.zoom < zoom, "a battle wider than the strip zooms out to fit");
+  ok(wide.every((h) => {
+    const c = r.layout.center(h);
+    return c.x >= -1 && c.x <= 391 && c.y >= -1 && c.y <= 401;
+  }), "…and still fits both ends in the strip");
+}
+{
+  // A panel that would leave no board worth looking at is ignored outright.
+  const { r } = mount(SAMBRE_CROSSING);
+  r.frameDefault();
+  const span = r._slice("y").span;
+  r.setInsets({ bottom: 590 });
+  ok(near(r._slice("y").span, span), "an inset leaving no room falls back to the canvas");
+}
+{
+  // The side rail: the same rules, on the other axis.
+  const { r } = mount(SAMBRE_CROSSING, 700, 420);
+  r.frameDefault();
+  r.setInsets({ right: 320 });
+  ok(near(r._slice("x").span, 380) && near(r._slice("x").mid, 190),
+     "a side rail insets the horizontal slice");
+  ok(near(r._slice("y").span, 420), "…and leaves the vertical one whole");
+}
+
 /* --- the new scenario's map is sound ----------------------------------- */
 {
   const def = SAMBRE_CROSSING;

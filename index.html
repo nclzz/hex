@@ -82,7 +82,9 @@
     padding:6px 12px; border-radius:14px; max-width:92%;}
 
   /* Hex inspector panel */
-  #hexInfo{position:absolute; left:8px; bottom:8px; z-index:12; max-width:58%;
+  /* Lifted clear of the battle sheet when one is docked (--cb-inset-*). */
+  #hexInfo{position:absolute; left:8px;
+    bottom:calc(8px + var(--cb-inset-bottom,0px)); z-index:12; max-width:58%;
     background:rgba(20,18,14,.9); color:#fff; border:1px solid rgba(255,255,255,.18);
     border-radius:12px; padding:8px 10px 9px; font-size:12px; line-height:1.35;
     box-shadow:0 6px 20px rgba(0,0,0,.45);}
@@ -108,9 +110,15 @@
   #passCard .sub{opacity:.8; font-size:14px; margin-top:10px;}
   #passSide{display:inline-block; padding:6px 16px; border-radius:12px; color:#fff; font-weight:900; font-size:22px;}
 
-  #cbOv{background:rgba(18,16,12,.55);}
+  /* The battle card is a SHEET, not a modal: it docks to one edge and leaves
+     the board visible and live behind it, because "advance into the hex?"
+     cannot be answered without seeing where the unit and the hex are. The
+     scrim is inert; only the card itself takes pointer events. */
+  #cbOv{background:none; pointer-events:none; align-items:flex-end;
+    justify-content:center; padding:0;}
   /* Attacker toggle chips (Napoleon at War: the player groups the battle) */
   #cbUnits{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px 0 2px;}
+  #cbUnits[hidden]{display:none;} /* an id rule outranks the UA [hidden] */
   .cbChip{padding:6px 9px; border-radius:9px; border:1.5px solid var(--line);
     background:var(--panel-d); color:var(--ink); font-weight:700; font-size:13px;}
   .cbChip .r{font-weight:400; opacity:.7; font-size:11px;}
@@ -122,9 +130,28 @@
   #advBtns button{padding:10px 14px; border-radius:10px; border:none; font-weight:800;
     font-size:14px; color:#fff; background:var(--blue-d);}
   #advBtns button.hold{background:#6b6355;}
-  #cbCard{background:var(--panel); border:2px solid var(--line); border-radius:16px;
-    padding:16px; width:min(340px,90vw); box-shadow:0 12px 40px rgba(0,0,0,.5);}
+  /* Each candidate carries the colour it is drawn with on the map, so the
+     button names a PLACE and not just a counter. */
+  #advBtns button i{display:inline-block; width:10px; height:10px; border-radius:3px;
+    margin-right:6px; vertical-align:-1px; border:1px solid rgba(255,255,255,.55);}
+  #advBtns button.on{box-shadow:0 0 0 2px #fff;}
+  #cbCard{background:var(--panel); border:2px solid var(--line); border-bottom:none;
+    border-radius:16px 16px 0 0; padding:4px 16px 16px; width:min(440px,100%);
+    max-height:76%; overflow-y:auto; pointer-events:auto;
+    box-shadow:0 -10px 30px rgba(0,0,0,.45);}
   #cbCard h3{margin:0 0 10px; font-size:17px; text-align:center;}
+  /* Grab handle: tap or drag to fold the reference rows away and hand the map
+     the rest of the screen. The decision row always stays. */
+  #cbHandle{display:block; width:100%; height:22px; padding:0; border:none;
+    background:var(--panel); touch-action:none; position:sticky; top:0; z-index:2;}
+  #cbHandle::before{content:""; position:absolute; left:50%; top:9px; width:38px;
+    height:4px; margin-left:-19px; border-radius:2px; background:var(--line); opacity:.6;}
+  #cbCard.collapsed .cbRow,
+  #cbCard.collapsed #cbUnits,
+  #cbCard.collapsed #cbBomb,
+  #cbCard.collapsed #oddsCtl{display:none;}
+  #cbCard.collapsed h3{margin-bottom:4px; font-size:15px;}
+  #cbCard.collapsed #odds{font-size:20px; margin:2px 0;}
   .cbRow{display:flex; justify-content:space-between; font-size:14px; padding:3px 2px;}
   .cbRow .v{font-weight:700;}
   #cbBomb{font-size:12px; opacity:.7; padding:3px 2px; text-align:center;}
@@ -137,8 +164,27 @@
   #dieBox{text-align:center; font-size:14px; min-height:20px; margin-bottom:6px; opacity:.9;}
   #cbBtns{display:flex; gap:10px; margin-top:12px;}
   #cbBtns button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; font-size:15px; color:#fff;}
+  /* On a short screen the card scrolls — but the decision must never scroll
+     out of reach, so whichever action block is live rides the bottom edge. */
+  #cbBtns, #advBox, #contBtn{position:sticky; bottom:0; z-index:1;
+    background:var(--panel); padding-top:6px; padding-bottom:2px; margin-top:6px;}
   #resolveBtn{background:var(--red-d);} #cancelBtn{background:#6b6355;}
   #contBtn{background:var(--ink); width:100%; margin-top:12px; padding:12px; border-radius:10px; border:none; color:#fff; font-weight:800; font-size:15px; display:none;}
+  /* Landscape on a phone has no vertical room to give away: dock the card to
+     the side instead, and the camera insets go horizontal to match. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    #cbOv{align-items:stretch; justify-content:flex-end;}
+    #cbCard{width:min(320px,50%); max-height:100%; padding:4px 14px 14px;
+      border:2px solid var(--line); border-right:none; border-radius:16px 0 0 16px;
+      box-shadow:-10px 0 30px rgba(0,0,0,.45);}
+    /* Trim the vertical bulk — landscape has none to spare. */
+    #cbCard h3{font-size:15px; margin-bottom:6px;}
+    .cbRow{font-size:13px; padding:2px;}
+    #odds{font-size:22px; margin:4px 0 2px;}
+    #cbUnits{margin:6px 0 2px;}
+    #cbBtns{margin-top:8px;}
+    #cbBtns button{padding:10px;}
+  }
 
   #winOv{background:rgba(18,16,12,.94);}
   #winCard{color:#fff;} #winCard .big{font-size:26px; font-weight:900; margin:8px 0;}
@@ -239,6 +285,7 @@
     <!-- Combat overlay -->
     <div id="cbOv" class="overlay">
       <div id="cbCard">
+        <button id="cbHandle" aria-label="Collapse or expand the battle card"></button>
         <h3 id="cbTitle">Resolve Combat</h3>
         <div id="cbInfo">
           <div class="cbRow"><span>Attackers (total CS)</span><span class="v" id="cbAtk">–</span></div>
