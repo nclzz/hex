@@ -730,7 +730,9 @@
     $("odds").textContent = valid
       ? colLabel(column) + (pending.lower ? " (lowered)" : "")
       : "—";
-    $("lowerBtn").disabled = !valid || !canLower;
+    // No greyed-out button: the control only appears when there is actually
+    // a column to step down to (the reset stays while a lowering is active).
+    $("lowerBtn").hidden = !valid || !canLower;
     $("lowerReset").hidden = !pending.lower;
     $("dieBox").textContent = valid ? ""
       : "Not legal: every defender needs an adjacent attacker in the battle.";
@@ -766,7 +768,7 @@
     rolling = true;
     $("resolveBtn").disabled = true;
     $("cancelBtn").disabled = true;
-    $("lowerBtn").disabled = true;
+    $("lowerBtn").hidden = true; // committed: the odds can no longer change
     $("lowerReset").hidden = true;
     $("rollZone").hidden = false;
     dieEl.classList.remove("landed");
