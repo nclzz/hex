@@ -149,8 +149,7 @@
   #cbCard.collapsed .cbRow,
   #cbCard.collapsed #cbUnits,
   #cbCard.collapsed #cbBomb,
-  #cbCard.collapsed #oddsCtl,
-  #cbCard.collapsed #crtCap{display:none;} /* the strip itself stays — it IS the roll */
+  #cbCard.collapsed #oddsCtl{display:none;} /* the strip itself stays — it IS the roll */
   #cbCard.collapsed h3{margin-bottom:4px; font-size:15px;}
   #cbCard.collapsed #odds{font-size:20px; margin:2px 0;}
   .cbRow{display:flex; justify-content:space-between; font-size:14px; padding:3px 2px;}
@@ -167,9 +166,8 @@
      coloured from the attacker's point of view — green favours the attacker,
      amber is an exchange, red a repulse. The tension is visible BEFORE the
      roll, and the landed face explains the outcome by itself. */
-  #crtCap{text-align:center; font-size:11px; opacity:.6; margin-top:2px;}
-  #crtStrip{display:flex; gap:4px; justify-content:center; margin:3px 0 5px;}
-  #crtStrip[hidden], #crtCap[hidden]{display:none;}
+  #crtStrip{display:flex; gap:4px; justify-content:center; margin:6px 0 5px;}
+  #crtStrip[hidden]{display:none;}
   .crtCell{flex:0 1 48px; min-width:0; text-align:center; border-radius:8px;
     padding:3px 0 4px; border:1.5px solid transparent;
     transition:opacity .25s, transform .25s;}
@@ -369,7 +367,6 @@
             <button id="lowerBtn" title="Fight at deliberately lower odds">Lower odds −</button>
             <button id="lowerReset" hidden>reset</button>
           </div>
-          <div id="crtCap" hidden>If the die lands on&hellip;</div>
           <div id="crtStrip" hidden></div>
         </div>
         <div id="rollZone" hidden><div id="die"></div></div>
