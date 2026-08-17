@@ -746,7 +746,7 @@
   // the die is ever thrown.
   function renderCrtStrip(column) {
     const strip = $("crtStrip");
-    strip.hidden = $("crtCap").hidden = !column;
+    strip.hidden = !column;
     if (!column) { strip.innerHTML = ""; return; }
     strip.innerHTML = "";
     for (const [i, code] of game.def.crt.table[column].entries()) {
