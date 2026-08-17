@@ -221,15 +221,26 @@ let game0; // set per-block below
   ok(r.zoom > zoom, "…and the zoom ratio climbed to hold it");
 }
 {
-  // A board framed whole reframes into the slice — that is what Fit must mean
-  // while the sheet is open.
+  // Even a board framed whole must not rescale when a panel opens: the panel
+  // covers part of the map, it never shrinks it. The camera is untouched, and
+  // closing the panel restores the exact original view.
   const { r } = mount(RIDGE_ASSAULT);
   r.frameAll();
-  const size = r.size;
+  const size = r.size, cam = { ...r.cam };
   r.setInsets({ bottom: 200 });
-  ok(near(r.zoom, 1), "a fitted board stays fitted when a panel opens");
-  ok(r.size < size, "…re-fitted smaller, into the strip that is left");
-  ok(r.contentOverflows() === false, "…and still shows the whole map");
+  ok(near(r.size, size, 1e-9), "a fitted board keeps its hex size when a panel opens");
+  ok(r.zoom > 1, "…so the zoom ratio climbed instead of re-fitting");
+  ok(near(r.cam.x, cam.x, 1e-6) && near(r.cam.y, cam.y, 1e-6),
+     "…and the camera focus did not move (the panel just covers the bottom)");
+  // The player can still pull the covered part out from behind the panel…
+  const y = r._worldRange("y");
+  r.panByPixels(0, -100000);
+  ok(r.layout.origin.y + y.hi * r.size <= 400 - r.pad + 1e-6,
+     "…panning up brings the board's bottom edge clear of the panel");
+  r.setInsets({});
+  ok(near(r.size, size, 1e-9) && near(r.zoom, 1) &&
+     near(r.cam.x, cam.x, 1e-6) && near(r.cam.y, cam.y, 1e-6),
+     "closing the panel restores the exact original view");
 }
 {
   const m = mount(SAMBRE_CROSSING); game0 = m.game;

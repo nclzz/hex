@@ -15,10 +15,13 @@
 
    The app may cover part of the canvas with a docked panel (the battle sheet).
    `insets` names that covered margin; the board still DRAWS across the whole
-   canvas, but everything about framing — fit, centring, clamping — works on
-   the uncovered SLICE, so the action never ends up behind the panel. `cam`
-   keeps meaning "the world point at the canvas centre", so panning, zooming
-   and hit-testing are untouched; with zero insets nothing below changes.
+   canvas. A panel opening or closing NEVER moves or rescales the map — the
+   camera holds its hex size and focus — but explicit framing (fit, centerOn,
+   ensureVisible) targets the uncovered SLICE, and the pan clamp accepts both
+   the full-canvas and the slice anchoring, so the player can pull the action
+   out from behind the panel. `cam` keeps meaning "the world point at the
+   canvas centre", so panning, zooming and hit-testing are untouched; with
+   zero insets nothing below changes.
    ========================================================================= */
 (function (global) {
   "use strict";
@@ -91,18 +94,21 @@
       this.frameAll();
     }
 
-    // Declare which margins of the canvas are covered by UI. Like resize(), this
-    // changes what "fits", so we hold the absolute hex size rather than the zoom
-    // ratio — the map must not visibly shrink just because a panel opened.
+    // Declare which margins of the canvas are covered by UI. Unlike resize(),
+    // nothing about the board or the canvas changed — a panel merely covers
+    // part of the view — so the map must not change scale AT ALL: the absolute
+    // hex size is held unconditionally (even for a board that was framed
+    // whole), and only the framing maths (fit, centring, clamping) learns
+    // about the new slice.
     setInsets(ins = {}) {
       const next = { top: 0, right: 0, bottom: 0, left: 0, ...ins };
       const cur = this.insets;
       if (next.top === cur.top && next.right === cur.right &&
           next.bottom === cur.bottom && next.left === cur.left) return false;
-      const oldSize = this.size, wasFitted = this.isAtMinZoom();
+      const oldSize = this.size;
       this.insets = next;
       this._recomputeFit();
-      this.zoom = wasFitted ? 1 : clamp(oldSize / this.fitSize, 1, this.maxZoom);
+      this.zoom = clamp(oldSize / this.fitSize, 1, this.maxZoom);
       this._applyCamera();
       return true;
     }
@@ -248,25 +254,34 @@
     _worldMid(axis) { const r = this._worldRange(axis); return (r.lo + r.hi) / 2; }
 
     // Keep the board anchored: centred on an axis it doesn't fill, otherwise
-    // clamped so its edge can never be dragged inside the viewport edge. The
-    // rule is applied to the uncovered slice, which is what lets the board be
-    // panned up against a docked panel instead of being yanked back under it.
+    // clamped so its edge can never be dragged inside the viewport edge. TWO
+    // framings are legal at once — anchored to the full canvas (where the
+    // board sat before a panel opened) and anchored to the uncovered slice
+    // (pulled up against a docked panel). The camera is clamped to the hull
+    // of the two, so a panel opening never moves the map, yet the player can
+    // still pan the action out from behind the panel.
     _clampCam() {
       if (!this.bounds) return;
       const s = this.size;
       for (const axis of ["x", "y"]) {
         const view = axis === "x" ? this.vw : this.vh;
         const sl = this._slice(axis);
-        const off = (sl.mid - view / 2) / s; // cam -> the world point at slice centre
         const { lo, hi } = this._worldRange(axis);
-        let mid = this.cam[axis] + off;
-        if ((hi - lo) * s + 2 * this.pad <= sl.span) {
-          mid = (lo + hi) / 2;
-        } else {
-          const slack = (sl.span / 2 - this.pad) / s;
-          mid = clamp(mid, lo + slack, hi - slack);
-        }
-        this.cam[axis] = mid - off;
+        // Legal cam interval against one window of the canvas: a single
+        // centred point if the board fits it, else the span over which no
+        // board edge comes inside the window's edge.
+        const legal = (wLo, wHi) => {
+          const off = ((wLo + wHi) / 2 - view / 2) / s; // cam -> world pt at window centre
+          if ((hi - lo) * s + 2 * this.pad <= wHi - wLo) {
+            const c = (lo + hi) / 2 - off;
+            return [c, c];
+          }
+          const slack = ((wHi - wLo) / 2 - this.pad) / s;
+          return [lo + slack - off, hi - slack - off];
+        };
+        const a = legal(0, view), b = legal(sl.lo, sl.hi);
+        this.cam[axis] = clamp(this.cam[axis],
+                               Math.min(a[0], b[0]), Math.max(a[1], b[1]));
       }
     }
 
