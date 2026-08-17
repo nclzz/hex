@@ -339,8 +339,10 @@
   // The battle sheet is deliberately NOT in this list: it docks to an edge and
   // leaves the board live, so the player can look around before committing to a
   // battle or an advance. Board taps stay suppressed (see commitTap) — only
-  // panning, zooming and press-and-hold inspection remain.
-  function boardBusy() { return !game || game.over || anyBlockingOverlay(); }
+  // panning, zooming and press-and-hold inspection remain. A finished game is
+  // treated the same way: the victory dialog blocks while shown, and once
+  // dismissed the board stays live for studying the final position.
+  function boardBusy() { return !game || anyBlockingOverlay(); }
 
   function startPinch() {
     const ids = [...pointers.keys()].slice(0, 2);
@@ -446,6 +448,17 @@
 
   function commitTap(x, y) {
     if (boardBusy()) return;
+    // The battle is decided: nothing left to play, so a plain tap inspects
+    // the final position (tapping the inspected hex again dismisses it).
+    if (game.over) {
+      const hex = renderer.pick(game, x, y);
+      if (hex && !(inspected && inspected.q === hex.q && inspected.r === hex.r)) {
+        inspectAt(x, y);
+      } else if (inspected) {
+        inspected = null; renderInspector(); draw();
+      }
+      return;
+    }
     // With the battle sheet open the board is for reading, not for regrouping:
     // openCombat() already snapshotted the battle being fought.
     if (combatSheetOpen()) {
@@ -823,6 +836,18 @@
   $("help").onclick = () => show("helpOv");
   $("helpClose").onclick = () => hide("helpOv");
   $("newBtn").onclick = () => showStart();
+  // The victory screen closes (× or a tap on the scrim) so the final position
+  // can be studied; the Result pill on the board brings it back.
+  const closeWin = () => {
+    hide("winOv");
+    $("resultBtn").classList.remove("hidden");
+    draw(); syncFit();
+  };
+  $("winClose").onclick = closeWin;
+  $("winOv").addEventListener("pointerdown", (ev) => {
+    if (ev.target === $("winOv")) closeWin();
+  });
+  $("resultBtn").onclick = () => { $("resultBtn").classList.add("hidden"); show("winOv"); };
   $("winBtn").onclick = () => { hide("winOv"); startGame(DEF); };
   $("winPickBtn").onclick = () => { hide("winOv"); showStart(); };
 
@@ -854,7 +879,9 @@
       list.appendChild(b);
     }
     closeCombatSheet(); hide("winOv"); hide("wizOv");
+    $("resultBtn").classList.add("hidden");
     document.body.classList.add("nogame");
+    document.body.classList.remove("over");
     show("startOv");
   }
 
@@ -982,8 +1009,8 @@
     sp.innerHTML = `${fac.short} <span class="tn">${game.turn}/${DEF.maxTurns}</span>`;
     sp.style.background = fac.color;
     const night = game.isNight && game.isNight();
-    $("phaseTxt").textContent =
-      night ? "Night — Movement" : game.phase === "move" ? "Movement" : "Combat";
+    $("phaseTxt").textContent = game.over ? "Battle over"
+      : night ? "Night — Movement" : game.phase === "move" ? "Movement" : "Combat";
     actBtn.textContent = game.phase === "move" ? "End Movement" : "End Combat";
     actBtn.style.background = fac.dark;
     // Demoralization ticker: eliminated SP vs each army's breaking point
@@ -1062,6 +1089,8 @@
   function startGame(def, saved) {
     DEF = def;
     document.body.classList.remove("nogame"); // the board needs its real size
+    document.body.classList.remove("over");   // the action bar is back in play
+    $("resultBtn").classList.add("hidden");
     if (saved) {
       try { game = Game.restore(DEF, saved.game); }
       catch (e) { clearSave(); saved = null; game = new Game(DEF); }
@@ -1105,6 +1134,11 @@
       $("winTitle").textContent = fac ? fac.name + " Victory" : "Draw";
       $("winTitle").style.color = fac ? fac.color : "#fff";
       $("winSub").textContent = reason;
+      // The action bar and any docked battle card have nothing left to say;
+      // the board becomes the record of the battle. The HUD stays (New).
+      closeCombatSheet();
+      document.body.classList.add("over");
+      syncHud();
       show("winOv");
     });
     // Autosave. "phase" also covers side changes (every sideChange is followed
