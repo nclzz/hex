@@ -288,11 +288,18 @@
   function syncSheetInsets() {
     if (!renderer) return;
     const card = $("cbCard");
+    const open = combatSheetOpen();
+    // The action bar is out of play while a battle is being fought: the card
+    // rides over it (portrait) and whatever stays visible is dimmed.
+    document.body.classList.toggle("sheetOpen", open);
     let ins = { top: 0, right: 0, bottom: 0, left: 0 };
-    if (combatSheetOpen())
+    if (open)
       ins = railMode()
         ? { top: TOP_CHROME_PX, right: card.offsetWidth, bottom: 0, left: 0 }
-        : { top: TOP_CHROME_PX, right: 0, bottom: card.offsetHeight, left: 0 };
+        : { top: TOP_CHROME_PX, right: 0, left: 0,
+            // The card is fixed to the viewport and swallows the action bar
+            // first; only the remainder covers the board.
+            bottom: Math.max(0, card.offsetHeight - $("bottom").offsetHeight) };
     renderer.setInsets(ins);
     // The hex inspector lives in the bottom-left corner; lift it clear.
     document.documentElement.style.setProperty("--cb-inset-bottom", ins.bottom + "px");
