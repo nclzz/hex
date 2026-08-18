@@ -218,6 +218,7 @@ g3.turn = g3.maxTurns; g3.sideIndex = g3.factions.length - 1;
 g3.phaseIndex = g3.phases.length - 1;
 g3.endPhase(); // should roll past maxTurns -> timeout
 ok(g3.over && g3.winner === "al", "Allies win on timeout");
+ok(g3.turn === g3.maxTurns, "the clock never shows a turn past the last");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
