@@ -732,8 +732,10 @@
           this.sideIndex++;
           if (this.sideIndex >= this.factions.length) {
             this.sideIndex = 0;
+            // The game ends AT the end of the last turn: the clock never
+            // ticks past maxTurns (the HUD shows this counter verbatim).
+            if (this.turn >= this.maxTurns) { this._timeout(); return { ok: true }; }
             this.turn++;
-            if (this.turn > this.maxTurns) { this._timeout(); return { ok: true }; }
           }
           this.events.emit("sideChange", { turn: this.turn, faction: this.activeFaction });
         }
