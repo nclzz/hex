@@ -13,10 +13,10 @@ const ctx = { Math, JSON, console };
 ctx.window = undefined;                // force the "globalThis" branch
 vm.createContext(ctx);
 for (const f of ["src/hex.js", "src/engine.js", "games/napoleon-at-war-common.js",
-                 "games/ridge-assault.js", "games/sambre-crossing.js"]) {
+                 "games/ridge-assault.js", "games/napoleon-at-waterloo.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: f });
 }
-const { Hex, HexWar, RIDGE_ASSAULT, SAMBRE_CROSSING } = ctx;
+const { Hex, HexWar, RIDGE_ASSAULT, NAPOLEON_AT_WATERLOO } = ctx;
 const { Game } = HexWar;
 
 let pass = 0, fail = 0;
@@ -149,11 +149,11 @@ const roundtrip = (g) => JSON.parse(JSON.stringify(g.serialize()));
 /* --- cross-scenario guard ------------------------------------------------ */
 {
   const g = new Game(RIDGE_ASSAULT);
-  throws(() => Game.restore(SAMBRE_CROSSING, roundtrip(g)),
-         "a Ridge Assault save cannot restore into Sambre Crossing");
-  const g2 = new Game(SAMBRE_CROSSING);
-  const r2 = Game.restore(SAMBRE_CROSSING, roundtrip(g2));
-  ok(r2.board.size === 24 * 18, "a Sambre save restores into Sambre");
+  throws(() => Game.restore(NAPOLEON_AT_WATERLOO, roundtrip(g)),
+         "a Ridge Assault save cannot restore into Napoleon at Waterloo");
+  const g2 = new Game(NAPOLEON_AT_WATERLOO);
+  const r2 = Game.restore(NAPOLEON_AT_WATERLOO, roundtrip(g2));
+  ok(r2.board.size === 27 * 22, "a Waterloo save restores into Waterloo");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

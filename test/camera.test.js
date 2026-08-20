@@ -14,12 +14,11 @@ ctx.window = undefined;                // force the "globalThis" branch
 vm.createContext(ctx);
 for (const f of ["src/hex.js", "src/engine.js", "src/renderer.js",
                  "games/napoleon-at-war-common.js",
-                 "games/ridge-assault.js", "games/sambre-crossing.js",
-                 "games/napoleon-at-waterloo.js"]) {
+                 "games/ridge-assault.js", "games/napoleon-at-waterloo.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: f });
 }
 const { Hex, HexWar, HexRenderer,
-        RIDGE_ASSAULT, SAMBRE_CROSSING, NAPOLEON_AT_WATERLOO } = ctx;
+        RIDGE_ASSAULT, NAPOLEON_AT_WATERLOO } = ctx;
 
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } }
@@ -55,7 +54,7 @@ function mount(def, w = 390, h = 600) {
 }
 
 /* --- pixelToHex round-trips ------------------------------------------- */
-for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
+for (const def of [RIDGE_ASSAULT, NAPOLEON_AT_WATERLOO]) {
   const { game, r } = mount(def);
   let bad = 0, off = 0;
   for (const [, hex] of game.board) {
@@ -102,9 +101,9 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
   ra.r.frameDefault();
   ok(near(ra.r.zoom, 1), "Ridge Assault opens showing the whole board (zoom 1)");
 
-  const sc = mount(SAMBRE_CROSSING);
+  const sc = mount(NAPOLEON_AT_WATERLOO);
   sc.r.frameDefault();
-  ok(sc.r.zoom > 1, "Sambre Crossing opens zoomed in past the fit");
+  ok(sc.r.zoom > 1, "Napoleon at Waterloo opens zoomed in past the fit");
   ok(sc.r.size >= 18, "…at a legible hex size (" + sc.r.size.toFixed(1) + "px)");
   ok(sc.r.contentOverflows() === true, "…and the board extends past the viewport");
   ok(sc.r.zoom <= sc.r.maxZoom + 1e-9, "zoom never exceeds maxZoom");
@@ -112,7 +111,7 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
 
 /* --- pan clamping ------------------------------------------------------ */
 {
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   const W = 390, H = 600, PAD = r.pad;
 
@@ -140,7 +139,7 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
 
 /* --- zoom about a focal point ------------------------------------------ */
 {
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   const fx = 120, fy = 410;
   const before = r.screenToWorld(fx, fy);
@@ -158,7 +157,7 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
 
 /* --- resize keeps the camera's world focus ----------------------------- */
 {
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   r.panByPixels(-60, -90);
   const cam = { x: r.cam.x, y: r.cam.y }, size = r.size;
@@ -179,7 +178,7 @@ for (const def of [RIDGE_ASSAULT, SAMBRE_CROSSING]) {
 
 /* --- ensureVisible ----------------------------------------------------- */
 {
-  const { game, r } = mount(SAMBRE_CROSSING);
+  const { game, r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   r.centerOn(game.hex(...Object.values(Hex.offsetToAxial(2, 16, "odd-r"))));
   const far = game.hex(...Object.values(Hex.offsetToAxial(20, 2, "odd-r")));
@@ -194,7 +193,7 @@ const off = (c, rw) => game0.hex(...Object.values(Hex.offsetToAxial(c, rw, "odd-
 let game0; // set per-block below
 {
   // Declaring no insets changes nothing at all.
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   const size = r.size, cam = { ...r.cam };
   ok(r.setInsets({}) === false, "setInsets with no insets reports no change");
@@ -206,7 +205,7 @@ let game0; // set per-block below
 {
   // Opening a panel must not visibly shrink the map: the absolute hex size is
   // held, exactly as across a resize.
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   const size = r.size, zoom = r.zoom;
   ok(r.setInsets({ bottom: 220 }) === true, "setInsets reports the change");
@@ -243,7 +242,7 @@ let game0; // set per-block below
      "closing the panel restores the exact original view");
 }
 {
-  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const m = mount(NAPOLEON_AT_WATERLOO); game0 = m.game;
   const r = m.r;
   r.frameDefault();
   r.setInsets({ bottom: 200 });
@@ -254,7 +253,7 @@ let game0; // set per-block below
   ok(near(r.layout.center(mid).x, 195, 1e-6), "…and horizontally as before");
 }
 {
-  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const m = mount(NAPOLEON_AT_WATERLOO); game0 = m.game;
   const r = m.r;
   r.frameDefault();
   r.setInsets({ bottom: 200 });
@@ -267,7 +266,7 @@ let game0; // set per-block below
 }
 {
   // A whole battle behind the panel is panned — never zoomed — into the strip.
-  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const m = mount(NAPOLEON_AT_WATERLOO); game0 = m.game;
   const r = m.r;
   r.frameDefault();
   r.setInsets({ bottom: 200 });
@@ -295,7 +294,7 @@ let game0; // set per-block below
 {
   // The clamp has to let the board be pulled up against the panel; otherwise a
   // battle on the southern edge can never be brought out from behind it.
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   r.setInsets({ bottom: 200 });
   const PAD = r.pad, y = r._worldRange("y");
@@ -307,7 +306,7 @@ let game0; // set per-block below
      "…and the top edge still stops at the padding");
 }
 {
-  const m = mount(SAMBRE_CROSSING); game0 = m.game;
+  const m = mount(NAPOLEON_AT_WATERLOO); game0 = m.game;
   const r = m.r;
   r.frameDefault();
   r.setInsets({ bottom: 200 });
@@ -332,7 +331,7 @@ let game0; // set per-block below
 }
 {
   // A panel that would leave no board worth looking at is ignored outright.
-  const { r } = mount(SAMBRE_CROSSING);
+  const { r } = mount(NAPOLEON_AT_WATERLOO);
   r.frameDefault();
   const span = r._slice("y").span;
   r.setInsets({ bottom: 590 });
@@ -340,95 +339,12 @@ let game0; // set per-block below
 }
 {
   // The side rail: the same rules, on the other axis.
-  const { r } = mount(SAMBRE_CROSSING, 700, 420);
+  const { r } = mount(NAPOLEON_AT_WATERLOO, 700, 420);
   r.frameDefault();
   r.setInsets({ right: 320 });
   ok(near(r._slice("x").span, 380) && near(r._slice("x").mid, 190),
      "a side rail insets the horizontal slice");
   ok(near(r._slice("y").span, 420), "…and leaves the vertical one whole");
-}
-
-/* --- the new scenario's map is sound ----------------------------------- */
-{
-  const def = SAMBRE_CROSSING;
-  const g = new HexWar.Game(def);
-  ok(def.map.every((row) => row.length === 24), "every map row is 24 hexes wide");
-  ok(def.map.length === 18, "the map is 18 rows deep");
-  ok(g.board.size === 24 * 18, "board has 432 hexes");
-  ok(def.map.join("").split("").every((c) => def.terrain[c]),
-     "every map character maps to a declared terrain");
-
-  const passable = (h) => def.terrain[h.terrain].passable !== false;
-  // objectives
-  for (const o of g.objectives) {
-    const h = g.hex(o.q, o.r);
-    ok(!!h && passable(h) && h.terrain === "t", `objective at ${o.q},${o.r} is a town hex`);
-  }
-  ok(g.objectives.length === 3, "three town objectives");
-  // units
-  const seen = new Set();
-  let bad = 0, stacked = 0;
-  for (const u of g.units) {
-    const h = g.hex(u.q, u.r);
-    if (!h || !passable(h)) bad++;
-    const k = Hex.key(u.q, u.r);
-    if (seen.has(k)) stacked++; else seen.add(k);
-  }
-  ok(g.units.length === 22, "22 units deployed (11 a side)");
-  ok(bad === 0, "every unit starts on an existing, passable hex");
-  ok(stacked === 0, "no two units start on the same hex");
-
-  // The hexside river must be crossable at the bridges: each side has to be
-  // able to walk to every town, never stepping over an unbridged river edge.
-  function reaches(from) {
-    const seenK = new Set([Hex.key(from.q, from.r)]);
-    const queue = [from];
-    while (queue.length) {
-      const cur = queue.shift();
-      for (const nb of Hex.neighbors(cur)) {
-        const k = Hex.key(nb.q, nb.r);
-        if (seenK.has(k)) continue;
-        if (g.edgeBetween(cur, nb) === "river") continue;
-        const h = g.hex(nb.q, nb.r);
-        if (!h || !passable(h)) continue;
-        seenK.add(k); queue.push(nb);
-      }
-    }
-    return seenK;
-  }
-  for (const f of def.factions) {
-    const start = g.living(f.id)[0];
-    const seenK = reaches(start);
-    const all = g.objectives.every((o) => seenK.has(Hex.key(o.q, o.r)));
-    ok(all, `${f.name} can reach every objective on foot (the bridges work)`);
-  }
-  // …and the river really is a barrier: without the bridges the south bank
-  // cannot reach the northern towns at all.
-  const bridges = [...g.edges.values()].filter((t) => t === "bridge").length;
-  const rivers = [...g.edges.values()].filter((t) => t === "river").length;
-  ok(bridges === 3, "the Sambre has exactly three bridges");
-  ok(rivers === 44, "the river runs the full width of the map (44 edges)");
-  {
-    const noBridges = new HexWar.Game(Object.assign({}, def, {
-      hexsides: [{ type: "river", pairs: def.hexsides.flatMap((h) => h.pairs) }],
-    }));
-    const frStart = noBridges.living("fr")[0];
-    const seenK = new Set([Hex.key(frStart.q, frStart.r)]);
-    const queue = [frStart];
-    while (queue.length) {
-      const cur = queue.shift();
-      for (const nb of Hex.neighbors(cur)) {
-        const k = Hex.key(nb.q, nb.r);
-        if (seenK.has(k)) continue;
-        if (noBridges.edgeBetween(cur, nb) === "river") continue;
-        const h = noBridges.hex(nb.q, nb.r);
-        if (!h || def.terrain[h.terrain].passable === false) continue;
-        seenK.add(k); queue.push(nb);
-      }
-    }
-    ok(noBridges.objectives.every((o) => !seenK.has(Hex.key(o.q, o.r))),
-       "with the bridges rivered over, the towns are unreachable");
-  }
 }
 
 /* --- Napoleon at Waterloo's map is sound -------------------------------- */
@@ -499,10 +415,10 @@ let game0; // set per-block below
 /* --- all scenarios are registered for the picker ------------------------ */
 {
   const reg = ctx.HEX_SCENARIOS || [];
-  ok(reg.length === 4, "four scenarios registered (incl. the Grouchy variant)");
-  ok(reg.indexOf(RIDGE_ASSAULT) >= 0 && reg.indexOf(SAMBRE_CROSSING) >= 0 &&
+  ok(reg.length === 3, "three scenarios registered (incl. the Grouchy variant)");
+  ok(reg.indexOf(RIDGE_ASSAULT) >= 0 &&
      reg.indexOf(NAPOLEON_AT_WATERLOO) >= 0 && reg.indexOf(ctx.NAW_GROUCHY) >= 0,
-     "the registry holds all four game definitions");
+     "the registry holds all three game definitions");
   ok(reg.every((d) => d.title && d.blurb && d.brief),
      "every scenario carries title/blurb/brief for the picker and help");
   ok(reg.every((d) => d.naw === true),

@@ -4,7 +4,7 @@ A tiny, **reusable hex-and-counter wargame engine** that now implements the
 **Napoleon at War** system — the classic SPI ruleset published on the
 [HexWar wiki](https://www.hexwar.com/wiki/games/napoleon-at-war/common/common-rules.html) —
 as a shared body of *common rules*, with each battle adding its own
-*exclusive rules*, exactly like the printed series. Four playable scenarios
+*exclusive rules*, exactly like the printed series. Three playable scenarios
 ship on it (hot-seat, two players, mobile browser):
 
 - **Napoleon at Waterloo** — 27×22, June 18, 1815. A race to destroy 40
@@ -14,8 +14,6 @@ ship on it (hot-seat, two players, mobile browser):
   optional rule: a secret die roll per side decides whether Grouchy's
   detachment returns and how much of Blücher's army shows up.
 - **Ridge Assault** — 9×11, a short fight for one town; fits on a phone screen.
-- **Sambre Crossing** — 24×18, an army-sized battle across a river. Drag to
-  scroll and pinch to zoom.
 
 You pick one on the start screen; before the battle begins, a short card
 spells out exactly how that scenario is won (per side, plus the draw), so
@@ -137,9 +135,8 @@ on top of the Standard Rules; the app enforces all of them):
   the lateral to Braine-l'Alleud, the eastern road by Ohain) as ½-MP road
   hexsides.
 
-The other two scenarios keep their own exclusive content — maps, armies and
-their objective-based victory conditions — on the same standard terrain
-chart. Sambre Crossing's river is a true hexside river with three bridges.
+Ridge Assault keeps its own exclusive content — map, armies and its
+objective-based victory condition — on the same standard terrain chart.
 
 ## How to play (the app)
 
@@ -217,7 +214,7 @@ games/
                            Not a scenario — a ruleset library.
   napoleon-at-waterloo.js  a GAME: map, order of battle, Prussian schedule,
   ridge-assault.js         demoralization levels, victory — the exclusive
-  sambre-crossing.js       rules. Each registers itself in `HEX_SCENARIOS`.
+                           rules. Each registers itself in `HEX_SCENARIOS`.
 app.js                     glue for this app: gestures, HUD, overlays, the
                            battle sheet (attacker chips, advance prompt, the
                            board highlights that go with them)
@@ -258,7 +255,7 @@ how the rivers work.
 npm test          # pure Node, no install needed
 ```
 
-429 headless assertions across the four suites above, plus an optional
+422 headless assertions across the four suites above, plus an optional
 browser smoke test (Playwright) that drives a real battle — mandatory combat,
 the advance prompt, the Prussian arrival, save/resume — through the actual UI.
 
@@ -280,8 +277,8 @@ Grouchy Variant tables, towns-don't-block-LOS). Still **reconstructions**,
 all plain data in one place each:
 
 - the **Slope and Marsh** terrain values
-  (`games/napoleon-at-war-common.js`) — used by the two non-Waterloo
-  scenarios, not part of the game's key;
+  (`games/napoleon-at-war-common.js`) — used by Ridge Assault, not part
+  of the game's key;
 - parts of the Waterloo **order of battle**
   (`games/napoleon-at-waterloo.js`): the Guard units' values and the exact
   Prussian counter mix are sized to the series' scale (the Grouchy
